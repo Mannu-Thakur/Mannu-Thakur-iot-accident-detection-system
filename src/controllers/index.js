@@ -17,4 +17,5 @@ module.exports = {
     ownerController,
     stateController,
     adminController,
+    authController,
 };
