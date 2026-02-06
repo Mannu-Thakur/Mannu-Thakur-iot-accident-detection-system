@@ -33,20 +33,17 @@ const authenticate = async (req, res, next) => {
         }
 
         // Attach user info to request
-        req.user = {
-            userId: decoded.userId,
-            email: decoded.email,
-            roles: decoded.roles || [],
-            ownerId: decoded.ownerId,
-            rtoId: decoded.rtoId,
-            authorityId: decoded.authorityId,
-            employeeId: decoded.employeeId,
-            stateId: decoded.stateId,
-        };
+        const user = await User.findById(decoded.userId).select('+roles +ownerId +rtoId +authorityId +employeeId +stateId');
 
-        // Optionally fetch full user (if needed for more operations)
-        // req.userDoc = await User.findById(decoded.userId);
+        if (!user) {
+            return sendUnauthorized(res, 'User not found');
+        }
 
+        if (!user.isActive) {
+            return sendUnauthorized(res, 'Account is disabled');
+        }
+
+        req.user = user;
         next();
     } catch (error) {
         logger.error('Authentication error:', error);
@@ -100,13 +97,11 @@ const requireRoles = (...roles) => {
             return sendUnauthorized(res, 'Authentication required');
         }
 
+        // Check if user has any of the required roles OR is an admin
         const hasRole = roles.some(role => req.user.roles.includes(role));
-        if (!hasRole) {
-            logger.warn('Access denied - insufficient roles:', {
-                userId: req.user.userId,
-                userRoles: req.user.roles,
-                requiredRoles: roles,
-            });
+        const isAdmin = req.user.roles.includes('ROLE_ADMIN');
+
+        if (!hasRole && !isAdmin) {
             return sendForbidden(res, 'Insufficient permissions');
         }
 
@@ -122,8 +117,13 @@ const requireOwner = (req, res, next) => {
         return sendUnauthorized(res, 'Authentication required');
     }
 
-    if (!req.user.roles.includes('ROLE_OWNER')) {
+    if (!req.user.roles.includes('ROLE_OWNER') && !req.user.roles.includes('ROLE_ADMIN')) {
         return sendForbidden(res, 'Owner access required');
+    }
+
+    // Admins skip ID check
+    if (req.user.roles.includes('ROLE_ADMIN')) {
+        return next();
     }
 
     if (!req.user.ownerId) {
@@ -162,11 +162,14 @@ const requireLocalAuth = (req, res, next) => {
 
     // Optionally check if authorityId in params matches user's authorityId
     const paramAuthorityId = req.params.authorityId;
+
+    // Admins bypass ID check
+    if (req.user.roles.includes('ROLE_ADMIN')) {
+        return next();
+    }
+
     if (paramAuthorityId && req.user.authorityId && paramAuthorityId !== req.user.authorityId) {
-        // Allow admin to access any authority
-        if (!req.user.roles.includes('ROLE_ADMIN')) {
-            return sendForbidden(res, 'Access denied to this authority');
-        }
+        return sendForbidden(res, 'Access denied to this authority');
     }
 
     next();
@@ -214,7 +217,12 @@ const requireEmployee = (req, res, next) => {
         return sendForbidden(res, 'Employee access required');
     }
 
-    if (!req.user.employeeId && !req.user.roles.includes('ROLE_ADMIN')) {
+    // Admins can bypass profile check
+    if (req.user.roles.includes('ROLE_ADMIN')) {
+        return next();
+    }
+
+    if (!req.user.employeeId) {
         return sendForbidden(res, 'Employee profile not linked');
     }
 

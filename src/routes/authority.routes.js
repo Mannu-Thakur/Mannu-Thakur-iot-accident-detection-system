@@ -28,6 +28,7 @@ router.get('/:authorityId/incidents/:incidentId', validateParams(incidentIdParam
 // Live access
 router.post('/:authorityId/live-access/request', validateParams(authorityIdParam), validateBody(liveAccessRequestSchema), authorityController.requestLiveAccess);
 router.get('/:authorityId/live-access/:requestId', validateParams(requestIdParam), authorityController.getLiveAccessStatus);
+router.post('/live-access/:requestId/respond', authorityController.respondToLiveAccess); // Device calls this
 
 // Rescue tasks
 router.post('/:authorityId/tasks', validateParams(authorityIdParam), validateBody(assignTaskSchema), authorityController.assignTask);

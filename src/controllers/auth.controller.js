@@ -17,9 +17,7 @@ const generateToken = (user) => {
     return jwt.sign(
         {
             userId: user._id,
-            role: user.role,
             email: user.email,
-            referenceId: user.referenceId
         },
         config.jwt.secret,
         { expiresIn: config.jwt.expiresIn }
@@ -59,7 +57,7 @@ const login = asyncHandler(async (req, res) => {
     await user.save();
 
     // Generate token
-    consttoken = generateToken(user);
+    const token = generateToken(user);
 
     // Get profile details based on role
     let profile = null;
@@ -83,7 +81,7 @@ const login = asyncHandler(async (req, res) => {
         user: {
             id: user._id,
             email: user.email,
-            role: user.role,
+            roles: user.role,
             name: user.name,
         },
         profile,

@@ -74,6 +74,8 @@ Creates a new RTO entity and a corresponding Admin User account.
   "contactEmail": "admin@rto.pune.gov.in",
   "contactPhone": "+919876543210",
   "address": "Sangam Bridge, Pune",
+  "lat": 18.5204,
+  "lon": 73.8567,
   "password": "SecurePassword123" // Optional, default: Perseva@123
 }
 ```
@@ -126,6 +128,38 @@ Creates a new RTO entity and a corresponding Admin User account.
   "contactPhone": "022-12345678",
   "address": "Mumbai",
   "password": "SecurePassword123"
+}
+```
+
+## State Authority Endpoints
+**Role Required:** `STATE_AUTHORITY` or `ADMIN`
+
+### Create Local Authority
+**Endpoint:** `POST /state/authorities`
+
+**Request Body:**
+```json
+{
+  "name": "Pune Municipal Disaster Management",
+  "code": "LA-PUNE-01",
+  "district": "Pune",
+  "state": "Maharashtra",
+  "location": { "lat": 18.52, "lon": 73.85 },
+  "contactEmail": "pune.dm@gov.in",
+  "contactPhone": "108",
+  "password": "SecurePassword123" // Optional
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "status": "success",
+  "data": {
+    "authorityId": "LA-...",
+    "name": "Pune Municipal Disaster Management",
+    "userEmail": "pune.dm@gov.in" // Admin login for LA
+  }
 }
 ```
 
@@ -192,8 +226,20 @@ Creates a new RTO entity and a corresponding Admin User account.
 ```json
 {
   "newOwnerId": "OWN-NEW-...",
-  "transferReason": "Sold",
-  "docs": ["doc_url_1"]
+  "transferReason": "Sold"
+}
+```
+
+### Create RTO Staff
+**Endpoint:** `POST /rto/staff`
+
+**Request Body:**
+```json
+{
+  "name": "Officer Sharma",
+  "email": "sharma@rto.pune.gov.in",
+  "password": "Password123",
+  "role": "RTO_STAFF"
 }
 ```
 
@@ -296,6 +342,46 @@ Creates a new RTO entity and a corresponding Admin User account.
 }
 ```
 *Note: This triggers a Socket.IO event to the device.*
+
+### Create Employee
+**Endpoint:** `POST /authority/:authorityId/employees`
+
+**Request Body:**
+```json
+{
+  "name": "Rescuer 1",
+  "email": "rescuer1@pune.gov.in",
+  "contact": "+919999999999",
+  "role": "RESCUER", // OR 'DRIVER', 'PARAMEDIC'
+  "shiftStart": "08:00",
+  "shiftEnd": "20:00"
+}
+```
+
+### Assign Rescue Task
+**Endpoint:** `POST /authority/:authorityId/tasks`
+
+**Request Body:**
+```json
+{
+  "incidentId": "INC-...",
+  "employeeIds": ["EMP-1", "EMP-2"],
+  "priority": 5, // 1-5
+  "estimatedArrivalMinutes": 15
+}
+```
+
+### Respond to Live Access (Device)
+**Endpoint:** `POST /api/authority/live-access/:requestId/respond`
+
+**Request Body:**
+```json
+{
+  "status": "GRANTED",
+  "streamToken": "tok_123...", // If granted
+  "streamTokenExpiresIn": 300
+}
+```
 
 ---
 

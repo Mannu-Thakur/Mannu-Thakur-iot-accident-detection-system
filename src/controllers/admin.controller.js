@@ -5,7 +5,7 @@
 const { Device, User, RTO, StateAuthority, LocalAuthority, AuditLog } = require('../models');
 const { generateDeviceId, generateRtoId, generateStateId, generateApiKey } = require('../utils/idGenerator');
 const logger = require('../utils/logger');
-const { sendSuccess, sendCreated, sendNotFound, sendPaginated } = require('../utils/response');
+const { sendError, sendSuccess, sendCreated, sendNotFound, sendPaginated } = require('../utils/response');
 const { asyncHandler } = require('../middleware/errorHandler');
 
 /**
@@ -83,7 +83,7 @@ const activateDevice = asyncHandler(async (req, res) => {
  * Create RTO
  */
 const createRTO = asyncHandler(async (req, res) => {
-    const { name, code, region, district, state, contactEmail, contactPhone, address, password } = req.body;
+    const { name, code, region, district, state, contactEmail, contactPhone, address, password, lat, lon } = req.body;
 
     // Check if user exists
     if (await User.findOne({ email: contactEmail })) {
@@ -102,15 +102,20 @@ const createRTO = asyncHandler(async (req, res) => {
         contactPhone,
         address,
         createdBy: req.user?.userId,
+        location: {
+            type: 'Point',
+            coordinates: [lon || 0, lat || 0] // Default to 0,0 if not provided, or make it required
+        }
     });
 
     // Create User for RTO Admin
     const user = new User({
         email: contactEmail,
         password: password || 'Perseva@123', // Default password if not provided
-        role: 'RTO',
+        roles: ['ROLE_RTO'],
         name,
         referenceId: rtoId,
+        rtoId, // Set specific ID
         isActive: true,
     });
 

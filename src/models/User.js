@@ -45,7 +45,7 @@ const UserSchema = new mongoose.Schema({
     roles: {
         type: [String],
         default: ['ROLE_OWNER'],
-        enum: ['ROLE_OWNER', 'ROLE_RTO', 'ROLE_LOCAL_AUTH', 'ROLE_STATE_AUTH', 'ROLE_EMPLOYEE', 'ROLE_ADMIN'],
+        enum: ['ROLE_OWNER', 'ROLE_RTO', 'ROLE_LOCAL_AUTH', 'ROLE_STATE_AUTH', 'ROLE_EMPLOYEE', 'ROLE_ADMIN', 'ROLE_RTO_STAFF'],
     },
 
     // Role-specific IDs

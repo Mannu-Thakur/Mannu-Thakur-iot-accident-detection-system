@@ -2,9 +2,11 @@
  * State Controller
  * State-level analytics and oversight
  */
-const { Incident, LocalAuthority } = require('../models');
-const { sendSuccess, sendPaginated } = require('../utils/response');
+const { Incident, LocalAuthority, User } = require('../models');
+const { sendSuccess, sendCreated, sendError, sendPaginated } = require('../utils/response');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { generateAuthorityId } = require('../utils/idGenerator');
+const logger = require('../utils/logger');
 
 /**
  * Get risk zone analytics
@@ -116,4 +118,74 @@ const getStatistics = asyncHandler(async (req, res) => {
     return sendSuccess(res, stats[0] || { total: 0, avgSeverity: 0, resolved: 0, critical: 0 });
 });
 
-module.exports = { getRiskZones, getIncidents, getAuthorities, getStatistics };
+/**
+ * Create local authority
+ */
+const createLocalAuthority = asyncHandler(async (req, res) => {
+    const { name, code, district, state, location, contactEmail, contactPhone, address, emergencyNumbers, password } = req.body;
+
+    // Check if user exists
+    if (await User.findOne({ email: contactEmail })) {
+        return sendError(res, 'User with this email already exists', 400);
+    }
+
+    const authorityId = generateAuthorityId();
+    // If created by Admin, find StateAuthority by state name
+    let stateAuthorityId = req.user?.referenceId;
+    if (req.user?.role === 'ADMIN') {
+        const StateAuthorityModel = require('../models/StateAuthority'); // Dynamic require to avoid circular dependency if any
+        const stateAuth = await StateAuthorityModel.findOne({ state, isDeleted: false });
+        if (stateAuth) {
+            stateAuthorityId = stateAuth.stateId;
+        } else {
+            // Optional: warn or error if state authority doesn't exist? 
+            // For now, proceed. Admin might be creating LA before State Auth (unlikely but possible)
+            logger.warn(`Admin creating LA for state '${state}' but no StateAuthority found.`);
+        }
+    }
+
+    const authority = new LocalAuthority({
+        authorityId,
+        name,
+        code,
+        district,
+        state,
+        location: {
+            type: 'Point',
+            coordinates: [location.lon || 0, location.lat || 0],
+        },
+        contactEmail,
+        contactPhone,
+        address,
+        emergencyNumbers,
+        stateAuthorityId,
+        createdBy: req.user?.userId,
+    });
+
+    // Create User for Local Authority Admin
+    const user = new User({
+        email: contactEmail,
+        password: password || 'Perseva@123',
+        roles: ['ROLE_LOCAL_AUTH'],
+        name,
+        referenceId: authorityId,
+        authorityId: authorityId, // Also set specific ID field
+        isActive: true,
+        // If created by State, link stateId
+        stateId: req.user?.role === 'STATE_AUTHORITY' ? req.user.referenceId : undefined,
+    });
+
+    await Promise.all([authority.save(), user.save()]);
+
+    logger.info('Local authority created:', { authorityId: authority.authorityId, name, createdBy: req.user?.userId });
+
+    return sendCreated(res, {
+        authorityId: authority.authorityId,
+        name: authority.name,
+        district: authority.district,
+        state: authority.state,
+        userEmail: user.email,
+    });
+});
+
+module.exports = { getRiskZones, getIncidents, getAuthorities, getStatistics, createLocalAuthority };

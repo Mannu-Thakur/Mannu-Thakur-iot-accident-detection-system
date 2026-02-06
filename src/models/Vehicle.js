@@ -17,7 +17,7 @@ const OwnershipHistorySchema = new mongoose.Schema({
         required: true,
     },
     toDate: Date,
-    transferDocs: [String],
+    toDate: Date,
     transferReason: String,
 }, { _id: false });
 
@@ -201,7 +201,7 @@ VehicleSchema.methods.unbindDevice = function () {
     return previousDeviceId;
 };
 
-VehicleSchema.methods.addOwnershipHistory = function (previousOwnerId, previousOwnerName, docs = [], reason = '') {
+VehicleSchema.methods.addOwnershipHistory = function (previousOwnerId, previousOwnerName, reason = '') {
     this.ownershipHistory.push({
         ownerId: previousOwnerId,
         ownerName: previousOwnerName,
@@ -209,7 +209,6 @@ VehicleSchema.methods.addOwnershipHistory = function (previousOwnerId, previousO
             ? this.ownershipHistory[this.ownershipHistory.length - 1].toDate || this.createdAt
             : this.createdAt,
         toDate: new Date(),
-        transferDocs: docs,
         transferReason: reason,
     });
 };

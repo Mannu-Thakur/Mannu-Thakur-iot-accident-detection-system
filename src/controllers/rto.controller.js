@@ -3,7 +3,7 @@
  * Handles RTO operations: owner creation, vehicle registration, transfers
  */
 const mongoose = require('mongoose');
-const { Owner, Vehicle, Device, AuditLog } = require('../models');
+const { Owner, Vehicle, Device, AuditLog, User } = require('../models');
 const { auditService } = require('../services');
 const { generateOwnerId, generateVehicleId, generateNomineeId } = require('../utils/idGenerator');
 const logger = require('../utils/logger');
@@ -337,7 +337,7 @@ const listVehicles = asyncHandler(async (req, res) => {
  */
 const transferOwnership = asyncHandler(async (req, res) => {
     const { vehicleId } = req.params;
-    const { newOwnerId, transferDate, documents, reason } = req.body;
+    const { newOwnerId, transferDate, reason } = req.body;
 
     // Find vehicle
     const vehicle = await Vehicle.findByVehicleId(vehicleId);
@@ -359,7 +359,6 @@ const transferOwnership = asyncHandler(async (req, res) => {
     vehicle.addOwnershipHistory(
         previousOwnerId,
         previousOwner?.fullName,
-        documents,
         reason
     );
 
@@ -497,6 +496,45 @@ const getAuditLogs = asyncHandler(async (req, res) => {
     return sendPaginated(res, logs, { page, limit, total });
 });
 
+/**
+ * Create RTO staff
+ */
+const createStaff = asyncHandler(async (req, res) => {
+    const { name, email, password, role } = req.body; // role can be 'CLERK', 'OFFICER' etc.
+
+    // Validate if user exists
+    if (await User.findOne({ email })) {
+        return sendError(res, 'User with this email already exists', 400);
+    }
+
+    // Determine role (default to ROLE_RTO_STAFF if not provided or restricted)
+    // For now, let's stick to simple 'RTO_STAFF' or reuse 'RTO' with limited permissions in frontend
+    // Or maybe we add 'ROLE_RTO_STAFF' to User model allowed roles. 
+    // Assuming 'ROLE_RTO_STAFF' is valid or we just use 'RTO' but they are not the primary contact.
+
+    const user = new User({
+        email,
+        password: password || 'Perseva@123',
+        roles: ['ROLE_RTO_STAFF'],
+        name,
+        referenceId: req.user?.rtoId, // Link to same RTO
+        rtoId: req.user?.rtoId,
+        isActive: true,
+        createdBy: req.user?.userId,
+    });
+
+    await user.save();
+
+    logger.info('RTO staff created:', { userId: user._id, rtoId: req.user?.rtoId });
+
+    return sendCreated(res, {
+        userId: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+    });
+});
+
 module.exports = {
     createOwner,
     getOwner,
@@ -508,4 +546,5 @@ module.exports = {
     transferOwnership,
     replaceDevice,
     getAuditLogs,
+    createStaff,
 };

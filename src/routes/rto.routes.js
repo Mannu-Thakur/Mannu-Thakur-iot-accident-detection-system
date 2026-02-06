@@ -38,4 +38,7 @@ router.post('/devices/replace', validateBody(replaceDeviceSchema), rtoController
 // Audit logs
 router.get('/audit', validateQuery(auditQuerySchema), rtoController.getAuditLogs);
 
+// Staff
+router.post('/staff', rtoController.createStaff); // Add validation if needed
+
 module.exports = router;

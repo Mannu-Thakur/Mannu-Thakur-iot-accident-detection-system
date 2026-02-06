@@ -18,6 +18,7 @@ router.get('/incidents', stateController.getIncidents);
 
 // Local authorities
 router.get('/authorities', stateController.getAuthorities);
+router.post('/authorities', stateController.createLocalAuthority);
 
 // Statistics
 router.get('/statistics', stateController.getStatistics);

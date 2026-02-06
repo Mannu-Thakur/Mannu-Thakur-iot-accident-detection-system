@@ -68,13 +68,33 @@ const reportIncident = asyncHandler(async (req, res) => {
     }
 
     const {
-        messageId, senderTimestamp, location, speed,
+        messageId, senderTimestamp, location: payloadLocation, speed,
         airbagsDeployed, brakeFailure, impactDirection, impactForce, connectivityUsed
     } = payload;
 
     // Validate device is bound
     if (!device.boundVehicleId) {
         return sendError(res, 'Device not bound to any vehicle', 400);
+    }
+
+    // Resolve location: Payload > Device Last Location > Default
+    let incidentLocation = null;
+    if (payloadLocation && payloadLocation.lat !== undefined && payloadLocation.lon !== undefined) {
+        incidentLocation = {
+            type: 'Point',
+            coordinates: [payloadLocation.lon, payloadLocation.lat],
+        };
+    } else if (device.lastLocation && device.lastLocation.coordinates && (device.lastLocation.coordinates[0] !== 0 || device.lastLocation.coordinates[1] !== 0)) {
+        logger.info('Using device last known location for incident', { deviceId });
+        incidentLocation = device.lastLocation;
+    } else {
+        logger.warn('No location provided for incident', { deviceId });
+        // Can fail or allow null depending on requirements. 
+        // For safety, we allow it but severity might be affected or LA assignment might fail.
+        incidentLocation = {
+            type: 'Point',
+            coordinates: [0, 0], // Default placeholder, or make schema optional
+        };
     }
 
     // Get image if uploaded
@@ -122,10 +142,7 @@ const reportIncident = asyncHandler(async (req, res) => {
             senderTimestamp: new Date(senderTimestamp),
             serverTimestamp: new Date(),
         },
-        location: {
-            type: 'Point',
-            coordinates: [location.lon, location.lat],
-        },
+        location: incidentLocation,
         imageUrl,
         imageHash,
         speed,
@@ -135,7 +152,7 @@ const reportIncident = asyncHandler(async (req, res) => {
         brakeFailure: brakeFailure || false,
         brakeTrusted,
         impactDirection: impactDirection || 'UNKNOWN',
-        impactForce,
+        impactForce: impactForce || 0, // Default to 0 if not provided
         connectivityUsed: connectivityUsed || 'INTERNET',
         messageId: messageId || generateMessageId(),
         status: imageUrl ? 'AI_PROCESSING' : 'REPORTED',
@@ -156,7 +173,7 @@ const reportIncident = asyncHandler(async (req, res) => {
     // Audit log
     await auditService.logIncidentCreated(deviceId, incidentId, {
         vehicleId: vehicle.vehicleId,
-        location: [location.lon, location.lat],
+        location: incident.location.coordinates,
         status: incident.status,
     });
 
@@ -164,7 +181,7 @@ const reportIncident = asyncHandler(async (req, res) => {
         incidentId,
         deviceId,
         vehicleId: vehicle.vehicleId,
-        location: [location.lon, location.lat],
+        location: incident.location.coordinates,
     });
 
     // ---- PARALLEL ASYNC OPERATIONS ----
@@ -173,7 +190,12 @@ const reportIncident = asyncHandler(async (req, res) => {
     setImmediate(async () => {
         try {
             // 1. Find nearest Local Authority and notify
-            const nearestLA = await geoService.findNearestAuthority(location.lon, location.lat);
+            const [lon, lat] = incident.location.coordinates;
+            // Ensure valid coords for search
+            let nearestLA = null;
+            if (lon !== 0 || lat !== 0) {
+                nearestLA = await geoService.findNearestAuthority(lon, lat);
+            }
 
             if (nearestLA) {
                 incident.assignedAuthorityId = nearestLA.authorityId;
@@ -189,7 +211,7 @@ const reportIncident = asyncHandler(async (req, res) => {
                         incidentId,
                         vehicleId: vehicle.vehicleId,
                         registrationNo: vehicle.registrationNo,
-                        location: { lat: location.lat, lon: location.lon },
+                        location: { lat, lon },
                         severity: incident.severityLevel,
                         timestamp: incident.timestamp.serverTimestamp,
                     });

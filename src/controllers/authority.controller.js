@@ -3,7 +3,7 @@
  * Handles Local Authority operations: incidents, live access, rescue tasks
  */
 const mongoose = require('mongoose');
-const { Incident, LiveAccessRequest, RescueTask, Employee, LocalAuthority, Device, Vehicle } = require('../models');
+const { Incident, LiveAccessRequest, RescueTask, Employee, LocalAuthority, Device, Vehicle, User } = require('../models');
 const { geoService, auditService, streamService, notificationService } = require('../services');
 const { generateRequestId, generateTaskId } = require('../utils/idGenerator');
 const logger = require('../utils/logger');
@@ -246,6 +246,56 @@ const getLiveAccessStatus = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Respond to live access request (Device only)
+ */
+const respondToLiveAccess = asyncHandler(async (req, res) => {
+    const { requestId } = req.params;
+    const { status, streamToken, streamTokenExpiresIn } = req.body; // status: 'GRANTED' | 'DENIED'
+
+    const liveRequest = await LiveAccessRequest.findByRequestId(requestId);
+    if (!liveRequest) {
+        return sendNotFound(res, 'Live access request not found');
+    }
+
+    if (liveRequest.status !== 'PENDING') {
+        return sendConflict(res, `Request is already ${liveRequest.status}`);
+    }
+
+    // Verify it's the correct device responding (API key auth should handle this identity check usually, 
+    // but here we verify the deviceId matches the token's deviceId if available, or just trust the device API key middleware)
+    // Assuming middleware puts device info in req.device or similar, but for now we trust the endpoint access.
+
+    liveRequest.status = status;
+    liveRequest.deviceAckAt = new Date();
+
+    if (status === 'GRANTED') {
+        if (!streamToken) {
+            return sendError(res, 'Stream token required when granting access', 400);
+        }
+        liveRequest.streamToken = streamToken;
+        liveRequest.streamTokenExpiresAt = new Date(Date.now() + (streamTokenExpiresIn || 300) * 1000);
+    }
+
+    await liveRequest.save();
+
+    // Notify Authority via Socket
+    if (io) {
+        // We need to find which socket belongs to the authority
+        // Ideally we room them by authorityId
+        io.to(`authority:${liveRequest.authorityId}`).emit('live_access_response', {
+            requestId,
+            status,
+            streamToken: status === 'GRANTED' ? streamToken : null,
+            incidentId: liveRequest.incidentId,
+        });
+    }
+
+    logger.info('Live access response processed:', { requestId, status, deviceId: liveRequest.deviceId });
+
+    return sendSuccess(res, { status: 'UPDATED' });
+});
+
+/**
  * Assign rescue task
  */
 const assignTask = asyncHandler(async (req, res) => {
@@ -346,6 +396,13 @@ const assignTask = asyncHandler(async (req, res) => {
                     estimatedArrivalMinutes,
                 });
             });
+        }
+
+        // Send SMS to employees
+        const phoneNumbers = employees.map(e => e.contact).filter(Boolean);
+        if (phoneNumbers.length > 0) {
+            const smsMessage = `URGENT: New Rescue Task Assigned.\nIncident: ${incidentId}\nLocation: https://maps.google.com/?q=${incident.location?.coordinates?.[1]},${incident.location?.coordinates?.[0]}\nPriority: ${priority || 'Normal'}`;
+            await notificationService.sendBulkSMS(phoneNumbers, smsMessage);
         }
 
         // Audit log
@@ -514,6 +571,11 @@ const createEmployee = asyncHandler(async (req, res) => {
         return sendNotFound(res, 'Authority not found');
     }
 
+    // Check if user exists
+    if (await User.findOne({ email })) {
+        return sendError(res, 'User with this email already exists', 400);
+    }
+
     const employee = new Employee({
         name,
         email,
@@ -526,7 +588,19 @@ const createEmployee = asyncHandler(async (req, res) => {
         createdBy: req.user?.userId,
     });
 
-    await employee.save();
+    // Create User for Employee
+    const user = new User({
+        email,
+        password: 'Perseva@123', // Default password
+        roles: ['ROLE_EMPLOYEE'],
+        name,
+        referenceId: employee.employeeId, // Use referenceId strictly or add employeeId to schema
+        employeeId: employee.employeeId,
+        authorityId: authorityId,
+        isActive: true,
+    });
+
+    await Promise.all([employee.save(), user.save()]);
 
     logger.info('Employee created:', { employeeId: employee.employeeId, name, authorityId });
 
@@ -534,6 +608,8 @@ const createEmployee = asyncHandler(async (req, res) => {
         employeeId: employee.employeeId,
         name: employee.name,
         role: employee.role,
+        userEmail: user.email,
+        defaultPassword: 'Perseva@123'
     });
 });
 
@@ -543,6 +619,7 @@ module.exports = {
     getIncidentDetails,
     requestLiveAccess,
     getLiveAccessStatus,
+    respondToLiveAccess,
     assignTask,
     getTasks,
     updateTask,
