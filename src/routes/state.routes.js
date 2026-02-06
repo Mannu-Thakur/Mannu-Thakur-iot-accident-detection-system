@@ -17,8 +17,10 @@ router.get('/risk-zones', stateController.getRiskZones);
 router.get('/incidents', stateController.getIncidents);
 
 // Local authorities
-router.get('/authorities', stateController.getAuthorities);
+router.post('/authorities/list', stateController.getAuthorities);
 router.post('/authorities', stateController.createLocalAuthority);
+router.put('/authorities/:authorityId', stateController.updateLocalAuthority);
+router.delete('/authorities/:authorityId', stateController.deleteLocalAuthority);
 
 // Statistics
 router.get('/statistics', stateController.getStatistics);

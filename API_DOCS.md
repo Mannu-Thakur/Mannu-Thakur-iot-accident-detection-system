@@ -124,6 +124,7 @@ Creates a new RTO entity and a corresponding Admin User account.
 {
   "name": "Maharashtra State Safety Board",
   "code": "MH",
+  "state": "Maharashtra",
   "contactEmail": "safety@maharashtra.gov.in",
   "contactPhone": "022-12345678",
   "address": "Mumbai",
@@ -131,8 +132,38 @@ Creates a new RTO entity and a corresponding Admin User account.
 }
 ```
 
+### Get State Authorities List
+**Endpoint:** `GET /admin/state-authorities`
+**Access:** Admin
+
+**Query Params:**
+- `page`, `limit`: Pagination
+- `search`: Search by name/code/state
+
+### Update State Authority
+**Endpoint:** `PUT /admin/state-authorities/:stateId`
+**Access:** Admin
+
+**Request Body:** (Any subset of Create fields)
+
+### Delete State Authority
+**Endpoint:** `DELETE /admin/state-authorities/:stateId`
+**Access:** Admin
+
 ## State Authority Endpoints
 **Role Required:** `STATE_AUTHORITY` or `ADMIN`
+
+### Get Authorities List
+**Endpoint:** `POST /state/authorities/list`
+
+**Request Body:**
+- `page`: (Optional) Page number (default: 1)
+- `limit`: (Optional) Items per page (default: 50)
+- `state`: (Optional for Admin, ignored for State Authority) Filter by state name.
+
+**Behavior:**
+- **Admin**: Can view any state's authorities by passing `state` param.
+- **State Authority**: Automatically views ALL authorities in their assigned state.
 
 ### Create Local Authority
 **Endpoint:** `POST /state/authorities`
@@ -147,7 +178,11 @@ Creates a new RTO entity and a corresponding Admin User account.
   "location": { "lat": 18.52, "lon": 73.85 },
   "contactEmail": "pune.dm@gov.in",
   "contactPhone": "108",
-  "password": "SecurePassword123" // Optional
+  "password": "SecurePassword123", // Optional
+  "regionGeoFence": { // Optional: Define jurisdiction area
+    "type": "Polygon",
+    "coordinates": [[[73.8, 18.5], [73.9, 18.5], [73.9, 18.6], [73.8, 18.6], [73.8, 18.5]]]
+  }
 }
 ```
 
@@ -163,6 +198,16 @@ Creates a new RTO entity and a corresponding Admin User account.
 }
 ```
 
+### Update Local Authority
+**Endpoint:** `PUT /state/authorities/:authorityId`
+**Access:** State Authority, Admin
+
+**Request Body:** (Any subset of Create fields)
+
+### Delete Local Authority
+**Endpoint:** `DELETE /state/authorities/:authorityId`
+**Access:** State Authority, Admin
+
 ---
 
 ## RTO Endpoints
@@ -174,15 +219,15 @@ Creates a new RTO entity and a corresponding Admin User account.
 **Request Body:**
 ```json
 {
-  "fullName": "John Doe",
-  "email": "john@example.com",
+  "fullName": "Mohit Motihari",
+  "email": "mohit@example.com",
   "mobileNumber": "+919876543210",
   "address": "123 Main St, Pune",
   "nominees": [
     {
       "name": "Jane Doe",
       "relation": "SPOUSE",
-      "mobileNumber": "+919876543211",
+      "phone": "+919876543211",
       "isPrimary": true
     }
   ]

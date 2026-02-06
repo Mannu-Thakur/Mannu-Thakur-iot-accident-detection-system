@@ -2,7 +2,7 @@
  * State Controller
  * State-level analytics and oversight
  */
-const { Incident, LocalAuthority, User } = require('../models');
+const { Incident, LocalAuthority, User, StateAuthority } = require('../models');
 const { sendSuccess, sendCreated, sendError, sendPaginated } = require('../utils/response');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { generateAuthorityId } = require('../utils/idGenerator');
@@ -75,15 +75,31 @@ const getIncidents = asyncHandler(async (req, res) => {
  * Get authorities list
  */
 const getAuthorities = asyncHandler(async (req, res) => {
-    const { state } = req.query;
+    let { state, page = 1, limit = 50 } = req.body;
     const query = { isDeleted: false, isActive: true };
+
+    // If user is SLA, enforce their state
+    if (req.user?.roles?.includes('ROLE_STATE_AUTH')) {
+        logger.info(`Checking SLA profile for user: ${req.user.userId}, refId: ${req.user.referenceId}`);
+        const sla = await StateAuthority.findOne({ stateId: req.user.referenceId });
+
+        if (!sla) {
+            logger.error(`SLA profile not found for refId: ${req.user.referenceId}`);
+            return sendError(res, 'State Authority profile not found', 404);
+        }
+        state = sla.state;
+    }
+
     if (state) query.state = state;
 
+    const total = await LocalAuthority.countDocuments(query);
     const authorities = await LocalAuthority.find(query)
-        .select('authorityId name district state availableEmployees incidentsHandled')
-        .sort({ state: 1, district: 1 });
+        .select('authorityId name district state availableEmployees incidentsHandled location')
+        .sort({ state: 1, district: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
 
-    return sendSuccess(res, authorities);
+    return sendPaginated(res, authorities, { page: parseInt(page), limit: parseInt(limit), total });
 });
 
 /**
@@ -132,9 +148,8 @@ const createLocalAuthority = asyncHandler(async (req, res) => {
     const authorityId = generateAuthorityId();
     // If created by Admin, find StateAuthority by state name
     let stateAuthorityId = req.user?.referenceId;
-    if (req.user?.role === 'ADMIN') {
-        const StateAuthorityModel = require('../models/StateAuthority'); // Dynamic require to avoid circular dependency if any
-        const stateAuth = await StateAuthorityModel.findOne({ state, isDeleted: false });
+    if (req.user?.roles?.includes('ROLE_ADMIN')) {
+        const stateAuth = await StateAuthority.findOne({ state, isDeleted: false });
         if (stateAuth) {
             stateAuthorityId = stateAuth.stateId;
         } else {
@@ -159,6 +174,7 @@ const createLocalAuthority = asyncHandler(async (req, res) => {
         address,
         emergencyNumbers,
         stateAuthorityId,
+        regionGeoFence: req.body.regionGeoFence, // Optional: Pass if provided
         createdBy: req.user?.userId,
     });
 
@@ -172,7 +188,7 @@ const createLocalAuthority = asyncHandler(async (req, res) => {
         authorityId: authorityId, // Also set specific ID field
         isActive: true,
         // If created by State, link stateId
-        stateId: req.user?.role === 'STATE_AUTHORITY' ? req.user.referenceId : undefined,
+        stateId: req.user?.roles?.includes('ROLE_STATE_AUTH') ? req.user.referenceId : undefined,
     });
 
     await Promise.all([authority.save(), user.save()]);
@@ -188,4 +204,76 @@ const createLocalAuthority = asyncHandler(async (req, res) => {
     });
 });
 
-module.exports = { getRiskZones, getIncidents, getAuthorities, getStatistics, createLocalAuthority };
+/**
+ * Update Local Authority
+ */
+const updateLocalAuthority = asyncHandler(async (req, res) => {
+    const { authorityId } = req.params;
+    const { name, code, district, state, contactEmail, contactPhone, address, emergencyNumbers } = req.body;
+
+    // Check if LA exists
+    const authority = await LocalAuthority.findOne({ authorityId, isDeleted: false });
+    if (!authority) return sendNotFound(res, 'Local Authority not found');
+
+    // If requester is SLA, verify ownership
+    if (req.user.roles.includes('ROLE_STATE_AUTH')) {
+        if (authority.stateAuthorityId && authority.stateAuthorityId !== req.user.referenceId) {
+            return sendError(res, 'Unauthorized to update this authority', 403);
+        }
+    }
+
+    if (name) authority.name = name;
+    if (code) authority.code = code;
+    if (district) authority.district = district;
+    if (state) authority.state = state;
+    if (contactEmail) authority.contactEmail = contactEmail;
+    if (contactPhone) authority.contactPhone = contactPhone;
+    if (address) authority.address = address;
+    if (emergencyNumbers) authority.emergencyNumbers = emergencyNumbers;
+
+    await authority.save();
+
+    // Update user
+    const user = await User.findOne({ referenceId: authorityId, roles: 'ROLE_LOCAL_AUTH' });
+    if (user) {
+        if (name) user.name = name;
+        if (contactEmail) user.email = contactEmail;
+        await user.save();
+    }
+
+    return sendSuccess(res, authority);
+});
+
+/**
+ * Delete Local Authority
+ */
+const deleteLocalAuthority = asyncHandler(async (req, res) => {
+    const { authorityId } = req.params;
+
+    const authority = await LocalAuthority.findOne({ authorityId, isDeleted: false });
+    if (!authority) return sendNotFound(res, 'Local Authority not found');
+
+    // Verify ownership for SLA
+    if (req.user.roles.includes('ROLE_STATE_AUTH')) {
+        if (authority.stateAuthorityId && authority.stateAuthorityId !== req.user.referenceId) {
+            return sendError(res, 'Unauthorized to delete this authority', 403);
+        }
+    }
+
+    authority.isDeleted = true;
+    authority.deletedAt = new Date();
+    await authority.save();
+
+    // Disable user
+    const user = await User.findOne({ referenceId: authorityId, roles: 'ROLE_LOCAL_AUTH' });
+    if (user) {
+        user.isActive = false;
+        user.isDeleted = true;
+        user.deletedAt = new Date();
+        await user.save();
+    }
+
+    return sendSuccess(res, { message: 'Local Authority deleted successfully' });
+});
+
+module.exports = { getRiskZones, getIncidents, getAuthorities, getStatistics, createLocalAuthority, updateLocalAuthority, deleteLocalAuthority };

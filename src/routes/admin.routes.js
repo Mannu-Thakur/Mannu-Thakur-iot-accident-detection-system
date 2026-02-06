@@ -20,6 +20,9 @@ router.post('/rtos', adminController.createRTO);
 
 // State Authorities
 router.post('/state-authorities', adminController.createStateAuthority);
+router.get('/state-authorities', adminController.listStateAuthorities);
+router.put('/state-authorities/:stateId', adminController.updateStateAuthority);
+router.delete('/state-authorities/:stateId', adminController.deleteStateAuthority);
 
 // System
 router.get('/stats', adminController.getSystemStats);

@@ -49,6 +49,11 @@ const UserSchema = new mongoose.Schema({
     },
 
     // Role-specific IDs
+    referenceId: { // Generic reference ID (rtoId, authorityId, stateId, etc.)
+        type: String,
+        index: true,
+        sparse: true,
+    },
     ownerId: {
         type: String,
         index: true,
@@ -167,6 +172,7 @@ UserSchema.methods.generateAccessToken = function () {
             userId: this._id.toString(),
             email: this.email,
             roles: this.roles,
+            referenceId: this.referenceId,
             ownerId: this.ownerId,
             rtoId: this.rtoId,
             authorityId: this.authorityId,

@@ -27,8 +27,8 @@ const createDevice = asyncHandler(async (req, res) => {
     });
 
     // Generate API key
-    device.apiKeyHash = await require('bcryptjs').hash(generateApiKey(), 10);
-    const apiKey = generateApiKey(); // Note: In real impl, store hashed, return plain once
+    const apiKey = generateApiKey();
+    device.apiKey = apiKey; // Pre-save hook will hash this
 
     await device.save();
 
@@ -37,7 +37,7 @@ const createDevice = asyncHandler(async (req, res) => {
     return sendCreated(res, {
         deviceId: device.deviceId,
         serialNumber: device.serialNumber,
-        apiKey, // Only returned once on creation
+        apiKey, // Return plain key once
     });
 });
 
@@ -128,7 +128,7 @@ const createRTO = asyncHandler(async (req, res) => {
  * Create State Authority
  */
 const createStateAuthority = asyncHandler(async (req, res) => {
-    const { name, code, contactEmail, contactPhone, address, password } = req.body;
+    const { name, code, state, contactEmail, contactPhone, address, password } = req.body;
 
     // Check if user exists
     if (await User.findOne({ email: contactEmail })) {
@@ -140,6 +140,7 @@ const createStateAuthority = asyncHandler(async (req, res) => {
         stateId,
         name,
         code,
+        state,
         contactEmail,
         contactPhone,
         address,
@@ -150,15 +151,95 @@ const createStateAuthority = asyncHandler(async (req, res) => {
     const user = new User({
         email: contactEmail,
         password: password || 'Perseva@123',
-        role: 'STATE_AUTHORITY',
+        roles: ['ROLE_STATE_AUTH'],
         name,
         referenceId: stateId,
+        stateId, // Set specific ID field
         isActive: true,
     });
 
     await Promise.all([stateAuth.save(), user.save()]);
 
     return sendCreated(res, { stateId: stateAuth.stateId, name: stateAuth.name, userEmail: user.email });
+});
+
+/**
+ * List State Authorities
+ */
+const listStateAuthorities = asyncHandler(async (req, res) => {
+    const { page = 1, limit = 20, search } = req.query;
+    const query = { isDeleted: false };
+
+    if (search) {
+        query.$or = [
+            { name: { $regex: search, $options: 'i' } },
+            { state: { $regex: search, $options: 'i' } },
+            { code: { $regex: search, $options: 'i' } }
+        ];
+    }
+
+    const total = await StateAuthority.countDocuments(query);
+    const authorities = await StateAuthority.find(query)
+        .sort({ name: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
+
+    return sendPaginated(res, authorities, { page: parseInt(page), limit: parseInt(limit), total });
+});
+
+/**
+ * Update State Authority
+ */
+const updateStateAuthority = asyncHandler(async (req, res) => {
+    const { stateId } = req.params;
+    const { name, code, state, contactEmail, contactPhone, address } = req.body;
+
+    const authority = await StateAuthority.findOne({ stateId, isDeleted: false });
+    if (!authority) return sendNotFound(res, 'State Authority not found');
+
+    if (name) authority.name = name;
+    if (code) authority.code = code;
+    if (state) authority.state = state;
+    if (contactEmail) authority.contactEmail = contactEmail;
+    if (contactPhone) authority.contactPhone = contactPhone;
+    if (address) authority.address = address;
+
+    await authority.save();
+
+    // Also update the associated User if needed (name/email)
+    const user = await User.findOne({ referenceId: stateId, roles: 'ROLE_STATE_AUTH' });
+    if (user) {
+        if (name) user.name = name;
+        if (contactEmail) user.email = contactEmail;
+        await user.save();
+    }
+
+    return sendSuccess(res, authority);
+});
+
+/**
+ * Delete State Authority
+ */
+const deleteStateAuthority = asyncHandler(async (req, res) => {
+    const { stateId } = req.params;
+
+    const authority = await StateAuthority.findOne({ stateId, isDeleted: false });
+    if (!authority) return sendNotFound(res, 'State Authority not found');
+
+    authority.isDeleted = true;
+    authority.deletedAt = new Date();
+    await authority.save();
+
+    // Disable associated User
+    const user = await User.findOne({ referenceId: stateId, roles: 'ROLE_STATE_AUTH' });
+    if (user) {
+        user.isActive = false;
+        user.isDeleted = true;
+        user.deletedAt = new Date();
+        await user.save();
+    }
+
+    return sendSuccess(res, { message: 'State Authority deleted successfully' });
 });
 
 /**
@@ -207,6 +288,9 @@ module.exports = {
     activateDevice,
     createRTO,
     createStateAuthority,
+    listStateAuthorities,
+    updateStateAuthority,
+    deleteStateAuthority,
     getSystemStats,
     getAuditLogs,
 };

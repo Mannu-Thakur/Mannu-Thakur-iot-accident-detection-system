@@ -29,6 +29,13 @@ const StateAuthoritySchema = new mongoose.Schema({
         index: true,
     },
 
+    state: {
+        type: String,
+        required: [true, 'State is required'],
+        trim: true,
+        index: true,
+    },
+
     // Contact
     contactEmail: {
         type: String,

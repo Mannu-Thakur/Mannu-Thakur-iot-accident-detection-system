@@ -33,7 +33,7 @@ const authenticate = async (req, res, next) => {
         }
 
         // Attach user info to request
-        const user = await User.findById(decoded.userId).select('+roles +ownerId +rtoId +authorityId +employeeId +stateId');
+        const user = await User.findById(decoded.userId).select('+roles +referenceId +ownerId +rtoId +authorityId +employeeId +stateId');
 
         if (!user) {
             return sendUnauthorized(res, 'User not found');

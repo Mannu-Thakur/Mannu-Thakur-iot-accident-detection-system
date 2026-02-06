@@ -60,7 +60,6 @@ const LocalAuthoritySchema = new mongoose.Schema({
         type: {
             type: String,
             enum: ['Polygon'],
-            default: 'Polygon',
         },
         coordinates: {
             type: [[[Number]]], // Array of arrays of coordinate pairs

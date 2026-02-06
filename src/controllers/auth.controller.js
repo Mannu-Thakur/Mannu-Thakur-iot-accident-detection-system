@@ -56,6 +56,20 @@ const login = asyncHandler(async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
+    // MIGRATION: Fix missing referenceId for existing users
+    if (!user.referenceId) {
+        if (user.roles.includes('ROLE_RTO') && user.rtoId) user.referenceId = user.rtoId;
+        else if (user.roles.includes('ROLE_LOCAL_AUTH') && user.authorityId) user.referenceId = user.authorityId;
+        else if (user.roles.includes('ROLE_STATE_AUTH') && user.stateId) user.referenceId = user.stateId;
+        else if (user.roles.includes('ROLE_OWNER') && user.ownerId) user.referenceId = user.ownerId;
+        else if (user.roles.includes('ROLE_EMPLOYEE') && user.employeeId) user.referenceId = user.employeeId;
+
+        if (user.referenceId) {
+            await user.save();
+            logger.info(`Migrated user ${user.email} (Added referenceId: ${user.referenceId})`);
+        }
+    }
+
     // Generate token
     const token = generateToken(user);
 
