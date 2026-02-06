@@ -250,6 +250,11 @@ Creates a new RTO entity and a corresponding Admin User account.
 ### Register Vehicle
 **Endpoint:** `POST /rto/vehicles`
 
+### List Vehicles
+**Endpoint:** `GET /rto/vehicles`
+**Query Params:** `page`, `limit`, `search`, `ownerId`, `vehicleType`, `hasDevice`
+**Note:** If accessed by RTO, lists only vehicles registered by that RTO.
+
 **Request Body:**
 ```json
 {
@@ -260,7 +265,79 @@ Creates a new RTO entity and a corresponding Admin User account.
   "fuelType": "PETROL",
   "model": "Swift",
   "manufacturer": "Maruti Suzuki",
-  "manufacturingYear": 2023
+  "manufacturingYear": 2023,
+  "deviceId": "DEV-2024-001" // Optional but recommended
+}
+```
+
+### Change Device (Replacement)
+**Endpoint:** `POST /rto/devices/replace`
+**Access:** RTO
+
+**Request Body:**
+```json
+{
+  "vehicleId": "VEH-...",
+  "oldDeviceId": "DEV-OLD-...",
+  "newDeviceId": "DEV-NEW-...",
+  "reason": "FAULTY", // FAULTY, UPGRADE, LOST, STOLEN
+  "notes": "Device stopped responding"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "vehicleId": "VEH-...",
+    "oldDeviceId": "DEV-OLD-...",
+    "newDeviceId": "DEV-NEW-..."
+  }
+}
+```
+
+### Update Vehicle
+**Endpoint:** `PUT /rto/vehicles/:vehicleId`
+**Access:** RTO (Must be registered owner)
+
+**Request Body:** (Partial update supported)
+```json
+{
+  "color": "Red",
+  "engineNo": "ENG-NEW-123",
+  "insurancePolicyNo": "POL-999"
+}
+```
+
+### Delete Vehicle (Deregister)
+**Endpoint:** `DELETE /rto/vehicles/:vehicleId`
+**Access:** RTO (Must be registered owner)
+
+### Get Vehicle Incident History
+**Endpoint:** `POST /rto/vehicles/:vehicleId/incidents`
+**Access:** RTO
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "vehicleId": "VEH-...",
+    "stats": {
+      "total": 5,
+      "critical": 1,
+      "resolved": 4
+    },
+    "incidents": [
+      {
+        "incidentId": "INC-...",
+        "severityLevel": 5,
+        "timestamp": "...",
+        "status": "RESOLVED"
+      }
+    ]
+  }
 }
 ```
 

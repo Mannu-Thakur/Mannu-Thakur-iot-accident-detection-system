@@ -3,7 +3,7 @@
  * Handles RTO operations: owner creation, vehicle registration, transfers
  */
 const mongoose = require('mongoose');
-const { Owner, Vehicle, Device, AuditLog, User } = require('../models');
+const { Owner, Vehicle, Device, AuditLog, User, Incident } = require('../models');
 const { auditService } = require('../services');
 const { generateOwnerId, generateVehicleId, generateNomineeId } = require('../utils/idGenerator');
 const logger = require('../utils/logger');
@@ -215,10 +215,11 @@ const registerVehicle = asyncHandler(async (req, res) => {
                 throw new AppError('Device not found', 404);
             }
             if (device.lifecycleStatus !== 'ACTIVE' && device.lifecycleStatus !== 'PENDING_ACTIVATION') {
-                throw new AppError(`Device is ${device.lifecycleStatus}`, 400);
+                throw new AppError(`Device cannot be bound. Current status: ${device.lifecycleStatus} (Required: ACTIVE or PENDING_ACTIVATION)`, 400);
             }
             if (device.boundVehicleId) {
-                throw new AppError('Device is already bound to another vehicle', 409);
+                const boundVehicle = await Vehicle.findOne({ vehicleId: device.boundVehicleId });
+                throw new AppError(`Device ${deviceId} is already bound to vehicle ${boundVehicle?.registrationNo || device.boundVehicleId}`, 409);
             }
 
             // Bind device
@@ -298,6 +299,11 @@ const listVehicles = asyncHandler(async (req, res) => {
 
     const query = { isDeleted: false };
 
+    // Filter by RTO if requester is RTO
+    if (req.user?.roles?.includes('ROLE_RTO')) {
+        query.registeredRtoId = req.user.rtoId;
+    }
+
     if (ownerId) {
         query.currentOwnerId = ownerId;
     }
@@ -329,7 +335,110 @@ const listVehicles = asyncHandler(async (req, res) => {
         .skip((page - 1) * limit)
         .limit(limit);
 
-    return sendPaginated(res, vehicles, { page, limit, total });
+    return sendPaginated(res, vehicles, { page: parseInt(page), limit: parseInt(limit), total });
+});
+
+/**
+ * Update vehicle details
+ */
+const updateVehicle = asyncHandler(async (req, res) => {
+    const { vehicleId } = req.params;
+    const updates = req.body;
+
+    const vehicle = await Vehicle.findByVehicleId(vehicleId);
+    if (!vehicle) {
+        return sendNotFound(res, 'Vehicle not found');
+    }
+
+    // Verify RTO ownership
+    if (req.user?.roles?.includes('ROLE_RTO')) {
+        if (vehicle.registeredRtoId && vehicle.registeredRtoId !== req.user.rtoId) {
+            return sendError(res, 'Unauthorized to update this vehicle (Registered by another RTO)', 403);
+        }
+    }
+
+    // Allowed updates
+    const allowedFields = ['engineNo', 'color', 'model', 'manufacturer', 'manufacturingYear', 'bodyType', 'fuelType', 'seatingCapacity', 'insuranceProvider', 'insurancePolicyNo', 'insuranceExpiryDate'];
+
+    allowedFields.forEach(field => {
+        if (updates[field] !== undefined) {
+            vehicle[field] = updates[field];
+        }
+    });
+
+    await vehicle.save();
+
+    logger.info('Vehicle updated:', { vehicleId: vehicle.vehicleId, updatedBy: req.user?.userId });
+
+    return sendSuccess(res, vehicle, 'Vehicle updated successfully');
+});
+
+/**
+ * Delete vehicle (Deregister)
+ */
+const deleteVehicle = asyncHandler(async (req, res) => {
+    const { vehicleId } = req.params;
+
+    const vehicle = await Vehicle.findByVehicleId(vehicleId);
+    if (!vehicle) {
+        return sendNotFound(res, 'Vehicle not found');
+    }
+
+    // Verify RTO ownership
+    if (req.user?.roles?.includes('ROLE_RTO')) {
+        if (vehicle.registeredRtoId && vehicle.registeredRtoId !== req.user.rtoId) {
+            return sendError(res, 'Unauthorized to delete this vehicle (Registered by another RTO)', 403);
+        }
+    }
+
+    // Check if device is bound
+    if (vehicle.deviceId) {
+        return sendConflict(res, 'Cannot delete vehicle with active device. Please unbind device first.');
+    }
+
+    vehicle.isDeleted = true;
+    vehicle.deletedAt = new Date();
+    vehicle.isActive = false;
+    vehicle.status = 'SCRAPPED'; // or just DELETED
+    await vehicle.save();
+
+    // Audit log
+    await auditService.logVehicleDeregistered(
+        req.user?.userId || 'SYSTEM',
+        'ROLE_RTO',
+        vehicleId,
+        { reason: 'Deregistered by RTO' }
+    );
+
+    return sendSuccess(res, { message: 'Vehicle deleted successfully' });
+});
+
+/**
+ * Get vehicle incident history
+ */
+const getVehicleIncidents = asyncHandler(async (req, res) => {
+    const { vehicleId } = req.params;
+
+    const vehicle = await Vehicle.findByVehicleId(vehicleId);
+    if (!vehicle) {
+        return sendNotFound(res, 'Vehicle not found');
+    }
+
+    const incidents = await Incident.find({ vehicleId, isDeleted: false })
+        .select('incidentId severityLevel status timestamp location aiFireDetected aiWaterSubmerged')
+        .sort({ 'timestamp.serverTimestamp': -1 });
+
+    const stats = {
+        total: incidents.length,
+        critical: incidents.filter(i => i.severityLevel >= 4).length,
+        resolved: incidents.filter(i => i.status === 'RESOLVED').length,
+    };
+
+    return sendSuccess(res, {
+        vehicleId,
+        stats,
+        incidents,
+    });
 });
 
 /**
@@ -546,5 +655,8 @@ module.exports = {
     transferOwnership,
     replaceDevice,
     getAuditLogs,
+    updateVehicle,
+    deleteVehicle,
+    getVehicleIncidents,
     createStaff,
 };

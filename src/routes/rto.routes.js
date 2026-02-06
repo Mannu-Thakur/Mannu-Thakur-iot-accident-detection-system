@@ -30,10 +30,15 @@ router.patch('/owners/:ownerId', validateParams(idParamSchema), validateBody(upd
 router.post('/vehicles', validateBody(registerVehicleSchema), rtoController.registerVehicle);
 router.get('/vehicles', validateQuery(listVehiclesQuerySchema), rtoController.listVehicles);
 router.get('/vehicles/:vehicleId', validateParams(vehicleIdParamSchema), rtoController.getVehicle);
+router.put('/vehicles/:vehicleId', validateParams(vehicleIdParamSchema), rtoController.updateVehicle);
+router.delete('/vehicles/:vehicleId', validateParams(vehicleIdParamSchema), rtoController.deleteVehicle);
+router.post('/vehicles/:vehicleId/incidents', validateParams(vehicleIdParamSchema), rtoController.getVehicleIncidents); // POST as per user request
 router.post('/vehicles/:vehicleId/transfer', validateParams(vehicleIdParamSchema), validateBody(transferOwnershipSchema), rtoController.transferOwnership);
 
 // Device replacement
 router.post('/devices/replace', validateBody(replaceDeviceSchema), rtoController.replaceDevice);
+// Advanced Alias
+router.post('/vehicles/:vehicleId/device/replace', validateParams(vehicleIdParamSchema), validateBody(replaceDeviceSchema), rtoController.replaceDevice);
 
 // Audit logs
 router.get('/audit', validateQuery(auditQuerySchema), rtoController.getAuditLogs);
