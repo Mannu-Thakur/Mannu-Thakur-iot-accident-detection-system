@@ -88,16 +88,21 @@ const getAuthorities = asyncHandler(async (req, res) => {
             return sendError(res, 'State Authority profile not found', 404);
         }
         state = sla.state;
+        logger.info(`SLA state enforced: ${state}`);
     }
 
     if (state) query.state = state;
 
+    logger.info(`getAuthorities query: ${JSON.stringify(query)}`);
+
     const total = await LocalAuthority.countDocuments(query);
     const authorities = await LocalAuthority.find(query)
-        .select('authorityId name district state availableEmployees incidentsHandled location')
+        .select('authorityId name code district state availableEmployees incidentsHandled location contactEmail contactPhone')
         .sort({ state: 1, district: 1 })
         .skip((page - 1) * limit)
         .limit(limit);
+
+    logger.info(`getAuthorities found ${authorities.length} authorities (total: ${total})`);
 
     return sendPaginated(res, authorities, { page: parseInt(page), limit: parseInt(limit), total });
 });
@@ -138,24 +143,44 @@ const getStatistics = asyncHandler(async (req, res) => {
  * Create local authority
  */
 const createLocalAuthority = asyncHandler(async (req, res) => {
-    const { name, code, district, state, location, contactEmail, contactPhone, address, emergencyNumbers, password } = req.body;
+    let { name, code, district, state, location, contactEmail, contactPhone, address, emergencyNumbers, password } = req.body;
 
     // Check if user exists
     if (await User.findOne({ email: contactEmail })) {
         return sendError(res, 'User with this email already exists', 400);
     }
+    // Check if authority code exists
+    if (code && await LocalAuthority.findOne({ code, isDeleted: false })) {
+        return sendError(res, 'Local Authority with this code already exists', 400);
+    }
 
     const authorityId = generateAuthorityId();
-    // If created by Admin, find StateAuthority by state name
     let stateAuthorityId = req.user?.referenceId;
-    if (req.user?.roles?.includes('ROLE_ADMIN')) {
+
+    // Determine State & StateAuthorityId
+    if (req.user?.roles?.includes('ROLE_STATE_AUTH')) {
+        const sla = await StateAuthority.findOne({ stateId: req.user.referenceId });
+        if (sla) {
+            state = sla.state; // Enforce state for SLA
+            stateAuthorityId = sla.stateId;
+        }
+    } else if (req.user?.roles?.includes('ROLE_ADMIN')) {
+        // Admin creating LA: Try to find linked StateAuthority
         const stateAuth = await StateAuthority.findOne({ state, isDeleted: false });
-        if (stateAuth) {
-            stateAuthorityId = stateAuth.stateId;
-        } else {
-            // Optional: warn or error if state authority doesn't exist? 
-            // For now, proceed. Admin might be creating LA before State Auth (unlikely but possible)
-            logger.warn(`Admin creating LA for state '${state}' but no StateAuthority found.`);
+        if (stateAuth) stateAuthorityId = stateAuth.stateId;
+    }
+
+    // Handle Location (GeoJSON or lat/lon)
+    let coordinates = [0, 0];
+    if (location) {
+        if (Array.isArray(location.coordinates)) {
+            coordinates = location.coordinates;
+        } else if (location.lat !== undefined && location.lon !== undefined) {
+            coordinates = [parseFloat(location.lon), parseFloat(location.lat)];
+        }
+        // If coming from frontend as { type: 'Point', coordinates: [...] } inside req.body.location
+        if (location.location && Array.isArray(location.location.coordinates)) {
+            coordinates = location.location.coordinates;
         }
     }
 
@@ -167,14 +192,14 @@ const createLocalAuthority = asyncHandler(async (req, res) => {
         state,
         location: {
             type: 'Point',
-            coordinates: [location.lon || 0, location.lat || 0],
+            coordinates: coordinates,
         },
         contactEmail,
         contactPhone,
         address,
         emergencyNumbers,
         stateAuthorityId,
-        regionGeoFence: req.body.regionGeoFence, // Optional: Pass if provided
+        regionGeoFence: req.body.regionGeoFence,
         createdBy: req.user?.userId,
     });
 
@@ -185,15 +210,32 @@ const createLocalAuthority = asyncHandler(async (req, res) => {
         roles: ['ROLE_LOCAL_AUTH'],
         name,
         referenceId: authorityId,
-        authorityId: authorityId, // Also set specific ID field
+        authorityId: authorityId,
         isActive: true,
-        // If created by State, link stateId
-        stateId: req.user?.roles?.includes('ROLE_STATE_AUTH') ? req.user.referenceId : undefined,
+        stateId: stateAuthorityId,
     });
 
-    await Promise.all([authority.save(), user.save()]);
+    // Serial Execution with Rollback
+    // 1. Save Authority first
+    try {
+        await authority.save();
+    } catch (err) {
+        logger.error(`Failed to save authority: ${err.message}`);
+        return sendError(res, `Failed to create authority: ${err.message}`, 400);
+    }
 
-    logger.info('Local authority created:', { authorityId: authority.authorityId, name, createdBy: req.user?.userId });
+    // 2. Save User
+    try {
+        await user.save();
+    } catch (err) {
+        logger.error(`Failed to save user for authority ${authorityId}: ${err.message}`);
+        // Rollback: Delete the authority we just created to avoid orphan/zombie state
+        await LocalAuthority.deleteOne({ _id: authority._id });
+        logger.info(`Rolled back authority creation for ${authorityId}`);
+        return sendError(res, `Failed to create user account: ${err.message}`, 400);
+    }
+
+    logger.info('Local authority created:', { authorityId: authority.authorityId, name, state });
 
     return sendCreated(res, {
         authorityId: authority.authorityId,
@@ -209,7 +251,7 @@ const createLocalAuthority = asyncHandler(async (req, res) => {
  */
 const updateLocalAuthority = asyncHandler(async (req, res) => {
     const { authorityId } = req.params;
-    const { name, code, district, state, contactEmail, contactPhone, address, emergencyNumbers } = req.body;
+    const { name, code, district, state, contactEmail, contactPhone, address, emergencyNumbers, location } = req.body;
 
     // Check if LA exists
     const authority = await LocalAuthority.findOne({ authorityId, isDeleted: false });
@@ -220,6 +262,8 @@ const updateLocalAuthority = asyncHandler(async (req, res) => {
         if (authority.stateAuthorityId && authority.stateAuthorityId !== req.user.referenceId) {
             return sendError(res, 'Unauthorized to update this authority', 403);
         }
+        // Prevent SLA from changing state if enforced?
+        // Usually SLA cannot change state of LA easily if bound to SLA's state
     }
 
     if (name) authority.name = name;
@@ -230,6 +274,23 @@ const updateLocalAuthority = asyncHandler(async (req, res) => {
     if (contactPhone) authority.contactPhone = contactPhone;
     if (address) authority.address = address;
     if (emergencyNumbers) authority.emergencyNumbers = emergencyNumbers;
+
+    // Handle Location Update
+    if (location) {
+        let coordinates;
+        if (Array.isArray(location.coordinates)) {
+            coordinates = location.coordinates;
+        } else if (location.lat !== undefined && location.lon !== undefined) {
+            coordinates = [parseFloat(location.lon), parseFloat(location.lat)];
+        }
+
+        if (coordinates) {
+            authority.location = {
+                type: 'Point',
+                coordinates: coordinates
+            };
+        }
+    }
 
     await authority.save();
 
@@ -276,4 +337,85 @@ const deleteLocalAuthority = asyncHandler(async (req, res) => {
     return sendSuccess(res, { message: 'Local Authority deleted successfully' });
 });
 
-module.exports = { getRiskZones, getIncidents, getAuthorities, getStatistics, createLocalAuthority, updateLocalAuthority, deleteLocalAuthority };
+/**
+ * Get single authority
+ */
+const getAuthority = asyncHandler(async (req, res) => {
+    const { authorityId } = req.params;
+    const authority = await LocalAuthority.findOne({ authorityId, isDeleted: false });
+
+    if (!authority) return sendNotFound(res, 'Local Authority not found');
+
+    // If requester is SLA, verify ownership/state
+    if (req.user.roles.includes('ROLE_STATE_AUTH')) {
+        // Optional: rigorous check if LA belongs to state
+        const sla = await StateAuthority.findOne({ stateId: req.user.referenceId });
+        if (sla && authority.state !== sla.state) {
+            return sendError(res, 'Unauthorized to view this authority', 403);
+        }
+    }
+
+    return sendSuccess(res, authority);
+});
+
+/**
+ * Get incidents by district
+ */
+const getIncidentsByDistrict = asyncHandler(async (req, res) => {
+    const { state } = req.query; // Filter by state if provided
+
+    const matchQuery = { isDeleted: false };
+
+    // If user is SLA, enforce state
+    if (req.user.roles.includes('ROLE_STATE_AUTH')) {
+        const sla = await StateAuthority.findOne({ stateId: req.user.referenceId });
+        if (sla) matchQuery.state = sla.state; // Assumes incident has state field or we join with LA
+        // Incident schema doesn't have state directly? Check schema.
+        // Incident has location. We can also filter by authorities in the state.
+
+        const authorities = await LocalAuthority.find({ state: sla.state, isDeleted: false });
+        const authIds = authorities.map(a => a.authorityId);
+        matchQuery.assignedAuthorityId = { $in: authIds };
+    } else if (state) {
+        const authorities = await LocalAuthority.find({ state, isDeleted: false });
+        const authIds = authorities.map(a => a.authorityId);
+        matchQuery.assignedAuthorityId = { $in: authIds };
+    }
+
+    const stats = await Incident.aggregate([
+        { $match: matchQuery },
+        // Lookup authority to get district
+        {
+            $lookup: {
+                from: 'localauthorities',
+                localField: 'assignedAuthorityId',
+                foreignField: 'authorityId',
+                as: 'authority'
+            }
+        },
+        { $unwind: '$authority' },
+        {
+            $group: {
+                _id: '$authority.district',
+                count: { $sum: 1 },
+                avgSeverity: { $avg: '$severityLevel' },
+                critical: { $sum: { $cond: [{ $gte: ['$severityLevel', 4] }, 1, 0] } }
+            }
+        },
+        { $sort: { count: -1 } }
+    ]);
+
+    return sendSuccess(res, stats);
+});
+
+module.exports = {
+    getRiskZones,
+    getIncidents,
+    getAuthorities,
+    getAuthority, // Exported
+    getStatistics,
+    getIncidentsByDistrict, // Exported
+    createLocalAuthority,
+    updateLocalAuthority,
+    deleteLocalAuthority
+};

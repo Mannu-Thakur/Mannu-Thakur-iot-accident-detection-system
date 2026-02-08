@@ -20,6 +20,9 @@ const vehicleIdParamSchema = Joi.object({ vehicleId: Joi.string().required() });
 // All routes require RTO authentication
 router.use(authenticate, requireRTO);
 
+// Statistics
+router.get('/statistics', rtoController.getStatistics);
+
 // Owner routes
 router.post('/owners', validateBody(createOwnerSchema), rtoController.createOwner);
 router.get('/owners', validateQuery(listOwnersQuerySchema), rtoController.listOwners);
@@ -44,6 +47,9 @@ router.post('/vehicles/:vehicleId/device/replace', validateParams(vehicleIdParam
 router.get('/audit', validateQuery(auditQuerySchema), rtoController.getAuditLogs);
 
 // Staff
-router.post('/staff', rtoController.createStaff); // Add validation if needed
+router.get('/staff', rtoController.listStaff);
+router.post('/staff', rtoController.createStaff);
+router.patch('/staff/:staffId', rtoController.updateStaff);
+router.delete('/staff/:staffId', rtoController.deleteStaff);
 
 module.exports = router;

@@ -391,18 +391,27 @@ Creates a new RTO entity and a corresponding Admin User account.
 **Content-Type:** `multipart/form-data`
 
 **Form Data:**
-- `image`: (File) - Actual accident photo
-- `payload`: (JSON String)
+- `image`: (File, Optional) - Accident photo for AI analysis
+- `payload`: (JSON String, Optional) - All fields are optional, device sends what it has
+
 ```json
 {
-  "messageId": "MSG-...",
-  "senderTimestamp": "2024-02-05T10:05:00Z",
-  "location": { "lat": 18.5204, "lon": 73.8567 },
-  "speed": 80,
-  "impactForce": 15.5,
-  "airbagsDeployed": true
+  "messageId": "MSG-...",           // Optional, auto-generated if not provided
+  "senderTimestamp": "2024-02-05T10:05:00Z",  // Optional, defaults to server time
+  "location": { "lat": 18.5204, "lon": 73.8567 },  // Optional, may not have GPS lock
+  "speed": 80,                       // Optional, km/h
+  "impactForce": 15.5,               // Optional, G-force
+  "impactDirection": "FRONT",        // Optional: FRONT, REAR, LEFT, RIGHT, ROLLOVER, UNKNOWN
+  "airbagsDeployed": true,           // Optional, sensor data
+  "isBreakFail": false,              // Optional, brake failure detected
+  "isFreeFall": false                // Optional, free fall / rollover detected
 }
 ```
+
+**AI-Detected Fields (Server-Side):**
+- `aiFireDetected` - Fire detected in image
+- `aiWaterSubmerged` - Vehicle submerged in water
+- `aiPatientCondition` - Patient condition: UNKNOWN, UNINJURED, MINOR, SERIOUS, CRITICAL
 
 **Response (201 Created):**
 ```json
@@ -421,9 +430,21 @@ Creates a new RTO entity and a corresponding Admin User account.
 ## Local Authority Endpoints
 **Role Required:** `LOCAL_AUTHORITY`
 
+> **Note:** All endpoints use POST with `authorityId` in the request body. If not provided, it will use the authorityId from the authenticated user's profile.
+
 ### Get Incidents
-**Endpoint:** `GET /authority/:authorityId/incidents`
-**Query Params:** `status=REPORTED,VERIFIED`
+**Endpoint:** `POST /authority/incidents`
+
+**Request Body:**
+```json
+{
+  "authorityId": "LA-...",  // Optional - uses auth token if not provided
+  "page": 1,
+  "limit": 50,
+  "status": "REPORTED",     // Optional filter
+  "minSeverity": 3          // Optional: minimum severity level
+}
+```
 
 **Response:**
 ```json
@@ -435,20 +456,30 @@ Creates a new RTO entity and a corresponding Admin User account.
       "incidentId": "INC-...",
       "severityLevel": 5,
       "location": { "coordinates": [73.8567, 18.5204] },
-      "status": "VERIFIED",
-       // ... details
+      "status": "VERIFIED"
     }
   ]
 }
 ```
 
-### Request Live Access (Camera)
-**Endpoint:** `POST /authority/:authorityId/live-access/request`
+### Get Incident Details
+**Endpoint:** `POST /authority/incidents/details`
 
 **Request Body:**
 ```json
 {
   "incidentId": "INC-..."
+}
+```
+
+### Request Live Access (Camera)
+**Endpoint:** `POST /authority/live-access/request`
+
+**Request Body:**
+```json
+{
+  "incidentId": "INC-...",
+  "reason": "Incident verification"  // Optional
 }
 ```
 
@@ -463,10 +494,9 @@ Creates a new RTO entity and a corresponding Admin User account.
   }
 }
 ```
-*Note: This triggers a Socket.IO event to the device.*
 
 ### Create Employee
-**Endpoint:** `POST /authority/:authorityId/employees`
+**Endpoint:** `POST /authority/employees/create`
 
 **Request Body:**
 ```json
@@ -474,33 +504,34 @@ Creates a new RTO entity and a corresponding Admin User account.
   "name": "Rescuer 1",
   "email": "rescuer1@pune.gov.in",
   "contact": "+919999999999",
-  "role": "RESCUER", // OR 'DRIVER', 'PARAMEDIC'
+  "role": "RESCUER",
   "shiftStart": "08:00",
   "shiftEnd": "20:00"
 }
 ```
 
 ### Assign Rescue Task
-**Endpoint:** `POST /authority/:authorityId/tasks`
+**Endpoint:** `POST /authority/tasks/assign`
 
 **Request Body:**
 ```json
 {
   "incidentId": "INC-...",
   "employeeIds": ["EMP-1", "EMP-2"],
-  "priority": 5, // 1-5
+  "priority": 5,
   "estimatedArrivalMinutes": 15
 }
 ```
 
 ### Respond to Live Access (Device)
-**Endpoint:** `POST /api/authority/live-access/:requestId/respond`
+**Endpoint:** `POST /authority/live-access/respond`
 
 **Request Body:**
 ```json
 {
+  "requestId": "REQ-...",
   "status": "GRANTED",
-  "streamToken": "tok_123...", // If granted
+  "streamToken": "tok_123...",
   "streamTokenExpiresIn": 300
 }
 ```

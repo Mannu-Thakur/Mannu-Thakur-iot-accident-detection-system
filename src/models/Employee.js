@@ -36,7 +36,7 @@ const EmployeeSchema = new mongoose.Schema({
     role: {
         type: String,
         required: [true, 'Role is required'],
-        enum: ['DRIVER', 'MEDIC', 'FIRE', 'POLICE', 'TECH', 'COORDINATOR', 'OTHER'],
+        enum: ['DRIVER', 'MEDIC', 'FIRE', 'POLICE', 'TECH', 'COORDINATOR', 'RESCUER', 'ROLE_EMPLOYEE', 'OTHER'],
         index: true,
     },
 

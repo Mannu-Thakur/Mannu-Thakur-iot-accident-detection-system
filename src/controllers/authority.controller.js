@@ -18,11 +18,21 @@ const setSocketIO = (socketIO) => {
 };
 
 /**
+ * Helper to get authorityId from body or user profile
+ */
+const getAuthorityId = (req) => {
+    return req.body.authorityId || req.user?.authorityId || req.user?.referenceId;
+};
+
+/**
  * Get incidents dashboard
  */
 const getIncidents = asyncHandler(async (req, res) => {
-    const { authorityId } = req.params;
-    const { page, limit, status, severityLevel, minSeverity, fromDate, toDate } = req.query;
+    const authorityId = getAuthorityId(req);
+    if (!authorityId) {
+        return sendError(res, 'authorityId is required', 400);
+    }
+    const { page = 1, limit = 50, status, severityLevel, minSeverity, fromDate, toDate } = req.body;
 
     const query = {
         isDeleted: false,
@@ -69,7 +79,8 @@ const getIncidents = asyncHandler(async (req, res) => {
  * Get incident details
  */
 const getIncidentDetails = asyncHandler(async (req, res) => {
-    const { authorityId, incidentId } = req.params;
+    const authorityId = getAuthorityId(req);
+    const { incidentId } = req.body;
 
     const incident = await Incident.findByIncidentId(incidentId);
     if (!incident) {
@@ -109,7 +120,10 @@ const getIncidentDetails = asyncHandler(async (req, res) => {
  * Request live preview
  */
 const requestLiveAccess = asyncHandler(async (req, res) => {
-    const { authorityId } = req.params;
+    const authorityId = getAuthorityId(req);
+    if (!authorityId) {
+        return sendError(res, 'authorityId is required', 400);
+    }
     const { incidentId, reason, expiresInSeconds } = req.body;
 
     // Validate incident
@@ -221,7 +235,8 @@ const requestLiveAccess = asyncHandler(async (req, res) => {
  * Get live access request status
  */
 const getLiveAccessStatus = asyncHandler(async (req, res) => {
-    const { authorityId, requestId } = req.params;
+    const authorityId = getAuthorityId(req);
+    const { requestId } = req.body;
 
     const liveRequest = await LiveAccessRequest.findByRequestId(requestId);
     if (!liveRequest) {
@@ -249,8 +264,7 @@ const getLiveAccessStatus = asyncHandler(async (req, res) => {
  * Respond to live access request (Device only)
  */
 const respondToLiveAccess = asyncHandler(async (req, res) => {
-    const { requestId } = req.params;
-    const { status, streamToken, streamTokenExpiresIn } = req.body; // status: 'GRANTED' | 'DENIED'
+    const { requestId, status, streamToken, streamTokenExpiresIn } = req.body;
 
     const liveRequest = await LiveAccessRequest.findByRequestId(requestId);
     if (!liveRequest) {
@@ -299,7 +313,10 @@ const respondToLiveAccess = asyncHandler(async (req, res) => {
  * Assign rescue task
  */
 const assignTask = asyncHandler(async (req, res) => {
-    const { authorityId } = req.params;
+    const authorityId = getAuthorityId(req);
+    if (!authorityId) {
+        return sendError(res, 'authorityId is required', 400);
+    }
     const { incidentId, employeeIds, priority, notes, estimatedArrivalMinutes } = req.body;
 
     // Validate incident
@@ -434,8 +451,11 @@ const assignTask = asyncHandler(async (req, res) => {
  * Get tasks
  */
 const getTasks = asyncHandler(async (req, res) => {
-    const { authorityId } = req.params;
-    const { page, limit, status } = req.query;
+    const authorityId = getAuthorityId(req);
+    if (!authorityId) {
+        return sendError(res, 'authorityId is required', 400);
+    }
+    const { page = 1, limit = 50, status } = req.body;
 
     const query = { assignedAuthorityId: authorityId, isDeleted: false };
     if (status) query.status = status;
@@ -453,8 +473,11 @@ const getTasks = asyncHandler(async (req, res) => {
  * Update task
  */
 const updateTask = asyncHandler(async (req, res) => {
-    const { authorityId, taskId } = req.params;
-    const { status, arrivedAt, completedAt, resolutionReport, notes, cancelReason } = req.body;
+    const authorityId = getAuthorityId(req);
+    if (!authorityId) {
+        return sendError(res, 'authorityId is required', 400);
+    }
+    const { taskId, status, arrivedAt, completedAt, resolutionReport, notes, cancelReason } = req.body;
 
     const task = await RescueTask.findByTaskId(taskId);
     if (!task) {
@@ -507,8 +530,11 @@ const updateTask = asyncHandler(async (req, res) => {
  * Get employees
  */
 const getEmployees = asyncHandler(async (req, res) => {
-    const { authorityId } = req.params;
-    const { page, limit, status, role } = req.query;
+    const authorityId = getAuthorityId(req);
+    if (!authorityId) {
+        return sendError(res, 'authorityId is required', 400);
+    }
+    const { page = 1, limit = 50, status, role } = req.body;
 
     const query = { authorityId, isDeleted: false };
     if (status) query.status = status;
@@ -562,7 +588,11 @@ const createLocalAuthority = asyncHandler(async (req, res) => {
  * Create employee
  */
 const createEmployee = asyncHandler(async (req, res) => {
-    const { authorityId } = req.params;
+    console.log("req to create employee", req.body);
+    const authorityId = getAuthorityId(req);
+    if (!authorityId) {
+        return sendError(res, 'authorityId is required', 400);
+    }
     const { name, email, contact, role, shiftStart, shiftEnd, workDays } = req.body;
 
     // Validate authority exists

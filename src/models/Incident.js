@@ -109,13 +109,22 @@ const IncidentSchema = new mongoose.Schema({
     aiModelVersion: {
         type: String,
     },
+    aiPatientCondition: {
+        type: String,
+        enum: ['UNKNOWN', 'UNINJURED', 'MINOR', 'SERIOUS', 'CRITICAL'],
+        default: 'UNKNOWN',
+    },
 
     // Device-sent sensor data
     airbagsDeployed: {
         type: Boolean,
         default: false,
     },
-    brakeFailure: {
+    isBreakFail: {
+        type: Boolean,
+        default: false,
+    },
+    isFreeFall: {
         type: Boolean,
         default: false,
     },

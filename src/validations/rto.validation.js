@@ -43,11 +43,19 @@ const createOwnerSchema = Joi.object({
     })).optional(),
 });
 
-// Update owner schema
+// Update owner schema - now includes all updatable fields
 const updateOwnerSchema = Joi.object({
     fullName: Joi.string().max(150).optional(),
+    email: Joi.string().email().optional(),
     mobileNumber: Joi.string().pattern(/^[+]?[\d\s-]{10,15}$/).optional(),
     address: Joi.string().max(500).optional().allow(''),
+    isActive: Joi.boolean().optional(),
+    nominees: Joi.array().items(nomineeSchema).max(5).optional(),
+    documents: Joi.array().items(Joi.object({
+        type: Joi.string().valid('AADHAAR', 'PAN', 'DL', 'PASSPORT', 'OTHER').required(),
+        number: Joi.string().required(),
+        url: Joi.string().uri().optional(),
+    })).optional(),
 });
 
 // Register vehicle schema

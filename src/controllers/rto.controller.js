@@ -11,6 +11,103 @@ const { sendSuccess, sendCreated, sendError, sendNotFound, sendConflict, sendPag
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 
 /**
+ * Get RTO dashboard statistics
+ */
+const getStatistics = asyncHandler(async (req, res) => {
+    const rtoId = req.user?.rtoId;
+
+    // Base query for RTO-specific data
+    const rtoQuery = rtoId ? { registeredRtoId: rtoId } : {};
+    const vehicleQuery = { isDeleted: false, ...rtoQuery };
+
+    // Get counts
+    const [totalVehicles, totalOwners, vehiclesWithDevice, totalIncidents] = await Promise.all([
+        Vehicle.countDocuments(vehicleQuery),
+        Owner.countDocuments({ isDeleted: false }),
+        Vehicle.countDocuments({ ...vehicleQuery, deviceId: { $exists: true, $ne: null } }),
+        Incident.countDocuments({ isDeleted: false }),
+    ]);
+
+    // Get vehicle type distribution
+    const vehicleTypeStats = await Vehicle.aggregate([
+        { $match: vehicleQuery },
+        { $group: { _id: '$vehicleType', count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+    ]);
+
+    // Get registrations per month (last 6 months)
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+    const monthlyRegistrations = await Vehicle.aggregate([
+        { $match: { ...vehicleQuery, createdAt: { $gte: sixMonthsAgo } } },
+        {
+            $group: {
+                _id: {
+                    year: { $year: '$createdAt' },
+                    month: { $month: '$createdAt' }
+                },
+                count: { $sum: 1 }
+            }
+        },
+        { $sort: { '_id.year': 1, '_id.month': 1 } }
+    ]);
+
+    // Get incident severity distribution
+    const incidentSeverity = await Incident.aggregate([
+        { $match: { isDeleted: false } },
+        {
+            $group: {
+                _id: {
+                    $cond: [
+                        { $gte: ['$severityLevel', 4] }, 'Critical',
+                        {
+                            $cond: [{ $gte: ['$severityLevel', 3] }, 'High',
+                            { $cond: [{ $gte: ['$severityLevel', 2] }, 'Medium', 'Low'] }
+                            ]
+                        }
+                    ]
+                },
+                count: { $sum: 1 }
+            }
+        }
+    ]);
+
+    // Get recent activity count (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const recentRegistrations = await Vehicle.countDocuments({
+        ...vehicleQuery,
+        createdAt: { $gte: sevenDaysAgo }
+    });
+
+    const recentTransfers = await Vehicle.countDocuments({
+        ...vehicleQuery,
+        'ownershipHistory.0': { $exists: true },
+        updatedAt: { $gte: sevenDaysAgo }
+    });
+
+    return sendSuccess(res, {
+        totalVehicles,
+        totalOwners,
+        totalDevices: vehiclesWithDevice,
+        totalIncidents,
+        deviceBindingRate: totalVehicles > 0 ? Math.round((vehiclesWithDevice / totalVehicles) * 100) : 0,
+        vehicleTypeDistribution: vehicleTypeStats.map(v => ({ type: v._id, count: v.count })),
+        monthlyRegistrations: monthlyRegistrations.map(m => ({
+            month: `${m._id.year}-${String(m._id.month).padStart(2, '0')}`,
+            count: m.count
+        })),
+        incidentSeverity: incidentSeverity.map(s => ({ severity: s._id, count: s.count })),
+        recentActivity: {
+            registrations: recentRegistrations,
+            transfers: recentTransfers
+        }
+    });
+});
+
+/**
  * Create a new owner (RTO only)
  */
 const createOwner = asyncHandler(async (req, res) => {
@@ -121,30 +218,52 @@ const listOwners = asyncHandler(async (req, res) => {
 /**
  * Update owner
  */
+/**
+ * Update owner
+ */
 const updateOwner = asyncHandler(async (req, res) => {
     const { ownerId } = req.params;
-    const updates = req.body;
+    const { fullName, email, mobileNumber, address, nominees, documents, isActive } = req.body;
 
     const owner = await Owner.findByOwnerId(ownerId);
     if (!owner) {
         return sendNotFound(res, 'Owner not found');
     }
 
-    // Apply updates
-    Object.keys(updates).forEach(key => {
-        if (updates[key] !== undefined) {
-            owner[key] = updates[key];
-        }
-    });
+    // Explicitly update fields if provided
+    if (fullName !== undefined) owner.fullName = fullName;
+    if (email !== undefined) owner.email = email.toLowerCase();
+    if (mobileNumber !== undefined) owner.mobileNumber = mobileNumber;
+    if (address !== undefined) owner.address = address;
+    if (isActive !== undefined) owner.isActive = isActive;
+
+    // Update nominees if provided
+    if (nominees && Array.isArray(nominees)) {
+        // Ensure nominees have IDs
+        owner.nominees = nominees.map(n => ({
+            ...n,
+            nomineeId: n.nomineeId || generateNomineeId()
+        }));
+    }
+
+    // Update documents if provided
+    if (documents && Array.isArray(documents)) {
+        owner.documents = documents;
+    }
 
     await owner.save();
 
-    logger.info('Owner updated:', { ownerId, updates: Object.keys(updates) });
+    logger.info('Owner updated:', { ownerId, updatedFields: Object.keys(req.body) });
 
     return sendSuccess(res, {
         ownerId: owner.ownerId,
         fullName: owner.fullName,
         email: owner.email,
+        mobileNumber: owner.mobileNumber,
+        address: owner.address,
+        nominees: owner.nominees,
+        documents: owner.documents,
+        isActive: owner.isActive
     }, 'Owner updated successfully');
 });
 
@@ -357,8 +476,8 @@ const updateVehicle = asyncHandler(async (req, res) => {
         }
     }
 
-    // Allowed updates
-    const allowedFields = ['engineNo', 'color', 'model', 'manufacturer', 'manufacturingYear', 'bodyType', 'fuelType', 'seatingCapacity', 'insuranceProvider', 'insurancePolicyNo', 'insuranceExpiryDate'];
+    // Allowed updates - including deviceSerialNo for RTO to use serial number
+    const allowedFields = ['engineNo', 'color', 'model', 'manufacturer', 'manufacturingYear', 'bodyType', 'fuelType', 'seatingCapacity', 'insuranceProvider', 'insurancePolicyNo', 'insuranceExpiryDate', 'deviceSerialNo'];
 
     allowedFields.forEach(field => {
         if (updates[field] !== undefined) {
@@ -644,7 +763,118 @@ const createStaff = asyncHandler(async (req, res) => {
     });
 });
 
+/**
+ * List RTO staff
+ */
+const listStaff = asyncHandler(async (req, res) => {
+    const rtoId = req.user?.rtoId;
+    const userId = req.user?.userId;
+
+    // Base query for RTO staff roles
+    const query = {
+        roles: { $in: ['ROLE_RTO_STAFF'] },
+        isActive: { $ne: false },
+        isDeleted: { $ne: true },
+    };
+
+    // Filter by RTO context if available - show staff created by this RTO
+    // If no rtoId/userId, show all RTO_STAFF (for admin views)
+    if (rtoId) {
+        query.$or = [
+            { rtoId: rtoId },
+            { createdBy: userId },
+            { referenceId: rtoId },
+        ];
+    }
+
+    const staff = await User.find(query)
+        .select('_id email name roles createdAt isActive rtoId')
+        .sort({ createdAt: -1 });
+
+    return sendSuccess(res, staff);
+});
+
+/**
+ * Update RTO staff
+ */
+const updateStaff = asyncHandler(async (req, res) => {
+    const { staffId } = req.params;
+    const { name, email, isActive, password } = req.body;
+    const rtoId = req.user?.rtoId;
+    const userId = req.user?.userId;
+
+    // Build query to find staff that belongs to this RTO
+    const queryConditions = [
+        { _id: staffId, roles: { $in: ['ROLE_RTO_STAFF'] } }
+    ];
+    if (rtoId) queryConditions[0].rtoId = rtoId;
+    else if (userId) queryConditions[0].createdBy = userId;
+
+    const staff = await User.findOne(queryConditions[0]);
+
+    if (!staff) {
+        return sendError(res, 'Staff member not found', 404);
+    }
+
+    // Update allowed fields
+    if (name) staff.name = name;
+    if (email) {
+        // Check email uniqueness
+        const existing = await User.findOne({ email, _id: { $ne: staffId } });
+        if (existing) {
+            return sendError(res, 'Email already in use by another user', 400);
+        }
+        staff.email = email;
+    }
+    if (typeof isActive === 'boolean') staff.isActive = isActive;
+    if (password && password.length >= 8) staff.password = password;
+
+    await staff.save();
+
+    logger.info('RTO staff updated:', { staffId, rtoId });
+
+    return sendSuccess(res, {
+        _id: staff._id,
+        email: staff.email,
+        name: staff.name,
+        isActive: staff.isActive,
+    });
+});
+
+/**
+ * Delete RTO staff (soft delete - deactivate)
+ */
+const deleteStaff = asyncHandler(async (req, res) => {
+    const { staffId } = req.params;
+    const rtoId = req.user?.rtoId;
+    const userId = req.user?.userId;
+
+    // Build query to find staff that belongs to this RTO
+    const query = {
+        _id: staffId,
+        roles: { $in: ['ROLE_RTO_STAFF'] },
+    };
+    if (rtoId) query.rtoId = rtoId;
+    else if (userId) query.createdBy = userId;
+
+    const staff = await User.findOne(query);
+
+    if (!staff) {
+        return sendError(res, 'Staff member not found', 404);
+    }
+
+    // Soft delete - mark as inactive
+    staff.isActive = false;
+    staff.deletedAt = new Date();
+    await staff.save();
+
+    logger.info('RTO staff deleted:', { staffId, rtoId });
+
+    return sendSuccess(res, { message: 'Staff member deleted successfully' });
+});
+
 module.exports = {
+    getStatistics,
     createOwner,
     getOwner,
     listOwners,
@@ -659,4 +889,8 @@ module.exports = {
     deleteVehicle,
     getVehicleIncidents,
     createStaff,
+    listStaff,
+    updateStaff,
+    deleteStaff,
 };
+

@@ -28,22 +28,17 @@ const heartbeatSchema = Joi.object({
     messageId: Joi.string().optional(),
 });
 
-// Incident payload schema
+// Incident payload schema - all fields optional, device sends what it has
 const incidentPayloadSchema = Joi.object({
-    messageId: Joi.string().required().messages({
-        'any.required': 'Message ID is required for deduplication',
-    }),
-    senderTimestamp: Joi.date().iso().required().messages({
-        'any.required': 'Sender timestamp is required',
-    }),
-    location: locationSchema.required().messages({
-        'any.required': 'Location is required',
-    }),
+    messageId: Joi.string().optional(), // Auto-generated if not provided
+    senderTimestamp: Joi.date().iso().optional(), // Defaults to server time
+    location: locationSchema.optional(), // May not have GPS lock
     speed: Joi.number().min(0).max(500).optional(),
-    airbagsDeployed: Joi.boolean().optional().default(false),
-    brakeFailure: Joi.boolean().optional().default(false),
-    impactDirection: Joi.string().valid('FRONT', 'REAR', 'LEFT', 'RIGHT', 'ROLLOVER', 'UNKNOWN').optional().default('UNKNOWN'),
     impactForce: Joi.number().min(0).optional(),
+    impactDirection: Joi.string().valid('FRONT', 'REAR', 'LEFT', 'RIGHT', 'ROLLOVER', 'UNKNOWN').optional(),
+    airbagsDeployed: Joi.boolean().optional(), // Optional sensor data
+    isBreakFail: Joi.boolean().optional(), // Brake failure detected
+    isFreeFall: Joi.boolean().optional(), // Free fall / rollover detected
     connectivityUsed: Joi.string().valid('INTERNET', 'LORA').optional().default('INTERNET'),
 });
 

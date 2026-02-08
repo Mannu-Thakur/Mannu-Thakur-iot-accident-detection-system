@@ -52,10 +52,17 @@ const computeSeverity = (incident) => {
     }
 
     // Brake failure
-    if (incident.brakeFailure) {
+    if (incident.isBreakFail) {
         const brakeScore = incident.brakeTrusted ? 1.5 : 0.75;
         score += brakeScore;
         factors.push({ factor: 'Brake Failure', value: true, trusted: incident.brakeTrusted, contribution: brakeScore });
+    }
+
+    // Free fall / rollover detection
+    if (incident.isFreeFall) {
+        const freeFallScore = 1.5;
+        score += freeFallScore;
+        factors.push({ factor: 'Free Fall Detected', value: true, contribution: freeFallScore });
     }
 
     // Fire detected (AI)

@@ -69,7 +69,7 @@ const reportIncident = asyncHandler(async (req, res) => {
 
     const {
         messageId, senderTimestamp, location: payloadLocation, speed,
-        airbagsDeployed, brakeFailure, impactDirection, impactForce, connectivityUsed
+        airbagsDeployed, isBreakFail, isFreeFall, impactDirection, impactForce, connectivityUsed
     } = payload;
 
     // Validate device is bound
@@ -134,12 +134,13 @@ const reportIncident = asyncHandler(async (req, res) => {
 
     // Create incident
     const incidentId = generateIncidentId();
+    const effectiveSenderTimestamp = senderTimestamp ? new Date(senderTimestamp) : new Date();
     const incident = new Incident({
         incidentId,
         vehicleId: vehicle.vehicleId,
         deviceId,
         timestamp: {
-            senderTimestamp: new Date(senderTimestamp),
+            senderTimestamp: effectiveSenderTimestamp,
             serverTimestamp: new Date(),
         },
         location: incidentLocation,
@@ -149,10 +150,11 @@ const reportIncident = asyncHandler(async (req, res) => {
         speedTrusted,
         airbagsDeployed: airbagsDeployed || false,
         airbagTrusted,
-        brakeFailure: brakeFailure || false,
+        isBreakFail: isBreakFail || false,
         brakeTrusted,
+        isFreeFall: isFreeFall || false,
         impactDirection: impactDirection || 'UNKNOWN',
-        impactForce: impactForce || 0, // Default to 0 if not provided
+        impactForce: impactForce || 0,
         connectivityUsed: connectivityUsed || 'INTERNET',
         messageId: messageId || generateMessageId(),
         status: imageUrl ? 'AI_PROCESSING' : 'REPORTED',

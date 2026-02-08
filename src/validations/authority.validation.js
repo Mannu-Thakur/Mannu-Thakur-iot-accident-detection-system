@@ -77,7 +77,7 @@ const createEmployeeSchema = Joi.object({
     name: Joi.string().required().max(150),
     email: Joi.string().email().optional(),
     contact: Joi.string().required().pattern(/^[+]?[\d\s-]{10,15}$/),
-    role: Joi.string().valid('DRIVER', 'MEDIC', 'FIRE', 'POLICE', 'TECH', 'COORDINATOR', 'OTHER').required(),
+    role: Joi.string().valid('DRIVER', 'MEDIC', 'FIRE', 'POLICE', 'TECH', 'COORDINATOR', 'OTHER', 'RESCUER', 'ROLE_EMPLOYEE').required(),
     shiftStart: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).optional(),
     shiftEnd: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).optional(),
     workDays: Joi.array().items(Joi.string().valid('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN')).optional(),
