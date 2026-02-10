@@ -9,10 +9,13 @@ import { useSocket } from '../../../../shared/hooks/useSocket.jsx';
 import { useToast } from '../../../../shared/hooks/useToast.jsx';
 import incidentService from '../../services/incident.service.js';
 import employeeService from '../../services/employee.service.js';
+import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import StatsCards from './StatsCards.jsx';
 import TeamBoard from './TeamBoard.jsx';
 import RecentIncidents from './RecentIncidents.jsx';
 import IncidentChart from './IncidentChart.jsx';
+import { getSeverityColor } from '../../../../shared/utils/formatters.js';
 
 function Dashboard() {
     const [stats, setStats] = useState({
@@ -97,6 +100,51 @@ function Dashboard() {
 
             <div className="dashboard-grid">
                 <div className="dashboard-col-8">
+                    {/* Live Incidents Map */}
+                    <div className="card" style={{ marginBottom: 'var(--spacing-lg)', padding: 0, overflow: 'hidden', height: '400px' }}>
+                        {recentIncidents.length > 0 && recentIncidents[0].location?.coordinates ? (
+                            <MapContainer
+                                center={[recentIncidents[0].location.coordinates[1], recentIncidents[0].location.coordinates[0]]}
+                                zoom={12}
+                                style={{ height: '100%', width: '100%' }}
+                            >
+                                <TileLayer
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                    attribution='&copy; OpenStreetMap contributors'
+                                />
+                                {recentIncidents.map(inc => (
+                                    inc.location?.coordinates && (
+                                        <CircleMarker
+                                            key={inc.incidentId}
+                                            center={[inc.location.coordinates[1], inc.location.coordinates[0]]}
+                                            pathOptions={{
+                                                color: getSeverityColor(inc.severityLevel) === 'danger' ? 'red' :
+                                                    getSeverityColor(inc.severityLevel) === 'warning' ? 'orange' : 'blue',
+                                                fillColor: getSeverityColor(inc.severityLevel) === 'danger' ? 'red' :
+                                                    getSeverityColor(inc.severityLevel) === 'warning' ? 'orange' : 'blue',
+                                                fillOpacity: 0.5
+                                            }}
+                                            radius={inc.severityLevel * 3}
+                                            eventHandlers={{
+                                                click: () => handleIncidentClick(inc.incidentId),
+                                            }}
+                                        >
+                                            <Popup>
+                                                <strong>{inc.incidentId}</strong><br />
+                                                Severity: {inc.severityLevel}<br />
+                                                {inc.address}
+                                            </Popup>
+                                        </CircleMarker>
+                                    )
+                                ))}
+                            </MapContainer>
+                        ) : (
+                            <div className="flex items-center justify-center h-full">
+                                <p className="text-muted">No location data available for map</p>
+                            </div>
+                        )}
+                    </div>
+
                     <IncidentChart />
                 </div>
                 <div className="dashboard-col-4">

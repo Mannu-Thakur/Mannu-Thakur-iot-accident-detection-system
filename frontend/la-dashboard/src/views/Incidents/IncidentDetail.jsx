@@ -4,14 +4,33 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 import incidentService from '../../services/incident.service.js';
 import { formatDateTime, formatStatus, formatSeverity, getSeverityColor } from '../../../../shared/utils/formatters.js';
+import AssignTeamModal from './AssignTeamModal.jsx';
+import { useToast } from '../../../../shared/hooks/useToast.jsx';
+
+// Fix Leaflet icon issue
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
 function IncidentDetail() {
     const { incidentId } = useParams();
     const navigate = useNavigate();
     const [incident, setIncident] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [showAssignModal, setShowAssignModal] = useState(false);
+    const [showLiveAccessModal, setShowLiveAccessModal] = useState(false);
+    const [requestReason, setRequestReason] = useState('Verify incident severity');
+    const [requestingAccess, setRequestingAccess] = useState(false);
+    const [modalClosing, setModalClosing] = useState(false);
+    const { success, error } = useToast();
 
     useEffect(() => {
         loadIncident();
@@ -28,6 +47,34 @@ function IncidentDetail() {
             setLoading(false);
         }
     };
+
+    const closeModal = (setModalFn) => {
+        setModalClosing(true);
+        setTimeout(() => {
+            setModalFn(false);
+            setModalClosing(false);
+        }, 300);
+    };
+
+    const handleRequestLiveAccess = async () => {
+        try {
+            setRequestingAccess(true);
+            await incidentService.requestLiveAccess({
+                incidentId: incident.incidentId,
+                reason: requestReason
+            });
+            success('Live access requested sent to device/owner');
+            closeModal(setShowLiveAccessModal);
+            loadIncident(); // Refresh to see request status
+        } catch (err) {
+            error(err.message || 'Failed to request live access');
+        } finally {
+            setRequestingAccess(false);
+        }
+    };
+
+    const isLiveAccessPending = incident?.liveAccessRequest?.status === 'PENDING';
+    const isLiveAccessGranted = incident?.liveAccessRequest?.status === 'GRANTED';
 
     if (loading) {
         return (
@@ -67,6 +114,44 @@ function IncidentDetail() {
                 </span>
             </div>
 
+            {/* Actions Bar */}
+            <div className="card mb-6 flex justify-between items-center" style={{ marginBottom: 'var(--spacing-lg)' }}>
+                <div className="flex gap-md">
+                    <button
+                        className="btn btn-primary"
+                        onClick={() => setShowAssignModal(true)}
+                        disabled={incident.status === 'RESOLVED' || incident.status === 'ARCHIVED'}
+                    >
+                        {incident.rescueTask ? 'View Rescue Task' : 'Assign Rescue Team'}
+                    </button>
+                    {!isLiveAccessGranted && (
+                        <button
+                            className="btn btn-secondary"
+                            onClick={() => setShowLiveAccessModal(true)}
+                            disabled={isLiveAccessPending}
+                        >
+                            {isLiveAccessPending ? 'Request Pending...' : 'Request Live Access'}
+                        </button>
+                    )}
+                </div>
+                {isLiveAccessGranted && (
+                    <div className="flex items-center gap-sm text-success">
+                        <span className="live-indicator">●</span> Live Access Granted
+                    </div>
+                )}
+            </div>
+
+            {/* Live Access Player (Placeholder) */}
+            {isLiveAccessGranted && (
+                <div className="card mb-6" style={{ marginBottom: 'var(--spacing-lg)', background: '#000', color: '#fff', minHeight: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div className="text-center">
+                        <h3>Live Stream Active</h3>
+                        <p>Stream Token: {incident.liveAccessRequest.streamToken}</p>
+                        <p className="text-sm text-muted">WebRTC Player Placeholder</p>
+                    </div>
+                </div>
+            )}
+
             <div className="dashboard-grid">
                 <div className="dashboard-col-8">
                     {/* Incident Info */}
@@ -96,6 +181,42 @@ function IncidentDetail() {
                                 <p className="font-medium">{incident.deviceId || 'N/A'}</p>
                             </div>
                         </div>
+                    </div>
+
+                    {/* Nominee Details (Privacy Protected) */}
+                    <div className="card" style={{ marginBottom: 'var(--spacing-lg)' }}>
+                        <div className="card-header">
+                            <h3 className="card-title">Emergency Contacts</h3>
+                        </div>
+                        {incident.ownerSnapshot?.nominees && incident.ownerSnapshot.nominees.length > 0 ? (
+                            <div className="table-responsive">
+                                <table className="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Relation</th>
+                                            <th>Phone</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {incident.ownerSnapshot.nominees.map((nominee, idx) => (
+                                            <tr key={idx}>
+                                                <td>{nominee.name}</td>
+                                                <td>{nominee.relationship || 'Nominee'}</td>
+                                                <td>{nominee.phone}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                {['RESOLVED', 'ARCHIVED'].includes(incident.status) && (
+                                    <p className="text-xs text-muted mt-2">
+                                        * Contact details masked for privacy after resolution.
+                                    </p>
+                                )}
+                            </div>
+                        ) : (
+                            <p className="text-muted">No nominee details available.</p>
+                        )}
                     </div>
 
                     {/* AI Analysis */}
@@ -142,6 +263,32 @@ function IncidentDetail() {
                 </div>
 
                 <div className="dashboard-col-4">
+                    {/* Map */}
+                    <div className="card" style={{ marginBottom: 'var(--spacing-lg)', padding: 0, overflow: 'hidden', height: '300px' }}>
+                        {incident.location?.coordinates ? (
+                            <MapContainer
+                                center={[incident.location.coordinates[1], incident.location.coordinates[0]]}
+                                zoom={15}
+                                style={{ height: '100%', width: '100%' }}
+                            >
+                                <TileLayer
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                    attribution='&copy; OpenStreetMap contributors'
+                                />
+                                <Marker position={[incident.location.coordinates[1], incident.location.coordinates[0]]}>
+                                    <Popup>
+                                        Incident Location<br />
+                                        {incident.address}
+                                    </Popup>
+                                </Marker>
+                            </MapContainer>
+                        ) : (
+                            <div className="flex items-center justify-center h-full">
+                                <p className="text-muted">Location data unavailable</p>
+                            </div>
+                        )}
+                    </div>
+
                     {/* Sensor Data */}
                     <div className="card">
                         <div className="card-header">
@@ -178,6 +325,54 @@ function IncidentDetail() {
                     </div>
                 </div>
             </div>
+
+            {/* Assign Team Modal */}
+            <AssignTeamModal
+                isOpen={showAssignModal}
+                onClose={() => setShowAssignModal(false)}
+                incidentId={incidentId}
+                onSuccess={loadIncident}
+            />
+
+            {/* Live Access Request Modal - Glassmorphism style */}
+            {showLiveAccessModal && (
+                <div
+                    className={`modal-overlay ${modalClosing ? 'closing' : ''}`}
+                    onClick={() => closeModal(setShowLiveAccessModal)}
+                >
+                    <div
+                        className="modal-content glass-panel bounce-in"
+                        style={{ maxWidth: '400px' }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="modal-header">
+                            <h3 className="modal-title">Request Live Access</h3>
+                            <button className="btn-close" onClick={() => closeModal(setShowLiveAccessModal)}>&times;</button>
+                        </div>
+                        <div className="modal-body">
+                            <p className="mb-4">
+                                Requesting live camera access from the vehicle owner/device.
+                                The owner will be notified to approve the request.
+                            </p>
+                            <div className="form-group">
+                                <label className="form-label">Reason</label>
+                                <textarea
+                                    className="form-input"
+                                    rows="2"
+                                    value={requestReason}
+                                    onChange={(e) => setRequestReason(e.target.value)}
+                                ></textarea>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => closeModal(setShowLiveAccessModal)}>Cancel</button>
+                            <button className="btn btn-primary" onClick={handleRequestLiveAccess} disabled={requestingAccess}>
+                                {requestingAccess ? <span className="spinner"></span> : 'Send Request'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

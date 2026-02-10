@@ -3,7 +3,7 @@
  * API calls for incident operations
  */
 
-import api from '../../../../shared/services/api.service.js';
+import api from '../../../shared/services/api.service.js';
 
 class IncidentService {
     /**

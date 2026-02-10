@@ -1,16 +1,16 @@
-/**
- * Employee List Page
- */
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import employeeService from '../../services/employee.service.js';
 import { getInitials, formatStatus } from '../../../../shared/utils/formatters.js';
+import DeleteConfirmationModal from '../../../../shared/components/UI/DeleteConfirmationModal.jsx';
+import { useToast } from '../../../../shared/hooks/useToast.jsx';
 
 function EmployeeList() {
     const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [deleteModal, setDeleteModal] = useState({ show: false, employeeId: null, name: '' });
     const navigate = useNavigate();
+    const { success, error } = useToast();
 
     useEffect(() => {
         loadEmployees();
@@ -20,11 +20,32 @@ function EmployeeList() {
         try {
             setLoading(true);
             const data = await employeeService.getEmployees({ limit: 100 });
-            setEmployees(data);
-        } catch (error) {
-            console.error('Failed to load employees:', error);
+            setEmployees(data || []);
+        } catch (err) {
+            console.error('Failed to load employees:', err);
+            error('Failed to load team list');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const confirmDelete = (employee) => {
+        setDeleteModal({
+            show: true,
+            employeeId: employee.employeeId,
+            name: employee.name
+        });
+    };
+
+    const handleDelete = async () => {
+        try {
+            await employeeService.deleteEmployee(deleteModal.employeeId);
+            success('Employee deleted successfully');
+            loadEmployees(); // Refresh list
+        } catch (err) {
+            console.error('Failed to delete employee:', err);
+            error(err.message || 'Failed to delete employee');
+            throw err; // Re-throw to keep modal open or let handling logic decide (modal catches it in onConfirm)
         }
     };
 
@@ -85,12 +106,20 @@ function EmployeeList() {
                                         </td>
                                         <td>{employee.phone || '-'}</td>
                                         <td>
-                                            <button
-                                                className="btn btn-ghost btn-sm"
-                                                onClick={() => navigate(`/team/${employee.employeeId}`)}
-                                            >
-                                                Edit
-                                            </button>
+                                            <div className="flex gap-sm">
+                                                <button
+                                                    className="btn btn-ghost btn-sm"
+                                                    onClick={() => navigate(`/team/${employee.employeeId}`)}
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    className="btn btn-ghost btn-sm text-danger"
+                                                    onClick={() => confirmDelete(employee)}
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -99,6 +128,14 @@ function EmployeeList() {
                     </div>
                 )}
             </div>
+
+            <DeleteConfirmationModal
+                isOpen={deleteModal.show}
+                onClose={() => setDeleteModal({ ...deleteModal, show: false })}
+                onConfirm={handleDelete}
+                title="Delete Employee"
+                itemName={deleteModal.name}
+            />
         </div>
     );
 }

@@ -9,6 +9,7 @@ export default defineConfig({
         alias: {
             '@shared': path.resolve(__dirname, '../shared'),
             '@': path.resolve(__dirname, './src'),
+            'socket.io-client': path.resolve(__dirname, 'node_modules/socket.io-client'),
         },
     },
     server: {

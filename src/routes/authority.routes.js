@@ -38,6 +38,8 @@ router.post('/tasks/update', validateBody(updateTaskSchema), authorityController
 // Employees
 router.post('/employees', authorityController.getEmployees);
 router.post('/employees/create', validateBody(createEmployeeSchema), authorityController.createEmployee);
+router.post('/employees/update', authorityController.updateEmployee);
+router.post('/employees/delete', authorityController.deleteEmployee);
 
 module.exports = router;
 

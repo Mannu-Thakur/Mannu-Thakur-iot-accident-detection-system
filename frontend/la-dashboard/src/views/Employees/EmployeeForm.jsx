@@ -3,7 +3,7 @@
  * Create/Edit employee
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import employeeService from '../../services/employee.service.js';
 import { useToast } from '../../../../shared/hooks/useToast.jsx';
@@ -14,13 +14,50 @@ function EmployeeForm() {
     const navigate = useNavigate();
     const { success, error } = useToast();
 
+    console.log('EmployeeForm mounted', { employeeId, isEdit });
+
+
     const [formData, setFormData] = useState({
         name: '',
         email: '',
         phone: '',
         role: 'FIELD_RESPONDER',
+        contact: '', // Normalize field names
     });
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (isEdit) {
+            loadEmployee();
+        }
+    }, [employeeId]);
+
+    const loadEmployee = async () => {
+        try {
+            setLoading(true);
+            const employees = await employeeService.getEmployees();
+            if (Array.isArray(employees)) {
+                const employee = employees.find(e => e.employeeId === employeeId);
+                if (employee) {
+                    setFormData({
+                        name: employee.name || '',
+                        email: employee.email || '',
+                        phone: employee.contact || employee.phone || '',
+                        contact: employee.contact || employee.phone || '',
+                        role: employee.role || 'FIELD_RESPONDER',
+                    });
+                } else {
+                    error('Employee not found');
+                    navigate('/team');
+                }
+            }
+        } catch (err) {
+            console.error(err);
+            error('Failed to load employee details');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -32,8 +69,18 @@ function EmployeeForm() {
         setLoading(true);
 
         try {
-            await employeeService.createEmployee(formData);
-            success('Employee created successfully');
+            const data = {
+                ...formData,
+                contact: formData.phone, // Ensure contact is sent
+            };
+
+            if (isEdit) {
+                await employeeService.updateEmployee({ ...data, employeeId });
+                success('Employee updated successfully');
+            } else {
+                await employeeService.createEmployee(data);
+                success('Employee created successfully');
+            }
             navigate('/team');
         } catch (err) {
             error(err.message || 'Failed to save employee');

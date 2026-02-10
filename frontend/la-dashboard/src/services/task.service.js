@@ -3,7 +3,7 @@
  * API calls for rescue task operations
  */
 
-import api from '../../../../shared/services/api.service.js';
+import api from '../../../shared/services/api.service.js';
 
 class TaskService {
     /**
@@ -29,6 +29,8 @@ class TaskService {
         const response = await api.post('/authority/tasks/update', data);
         return response.data;
     }
+
+
 }
 
 export const taskService = new TaskService();

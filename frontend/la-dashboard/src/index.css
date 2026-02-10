@@ -138,6 +138,128 @@
     }
 }
 
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 1rem;
+    animation: modalFadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.modal-content {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-glass);
+    border-radius: 16px;
+    box-shadow: var(--shadow-xl);
+    width: 100%;
+    max-width: 480px;
+    max-height: 90vh;
+    overflow: auto;
+    animation: modalSlideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes modalSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(16px) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.modal-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border-glass);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.modal-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border-glass);
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+}
+
+/* Paper Drop Animation */
+.modal-overlay.closing {
+    animation: modalFadeOut 0.3s ease-in forwards;
+}
+
+.modal-overlay.closing .modal-content {
+    animation: paperDrop 0.4s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes modalFadeOut {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
+@keyframes paperDrop {
+    0% {
+        opacity: 1;
+        transform: translateY(0) rotate(0deg) scale(1);
+    }
+
+    30% {
+        transform: translateY(20px) rotate(-3deg) scale(0.98);
+    }
+
+    60% {
+        transform: translateY(100px) rotate(5deg) scale(0.9);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(200vh) rotate(-15deg) scale(0.7);
+    }
+}
+
 /* Team status board */
 .team-board {
     display: grid;

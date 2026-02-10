@@ -3,7 +3,7 @@
  * API calls for employee operations
  */
 
-import api from '../../../../shared/services/api.service.js';
+import api from '../../../shared/services/api.service.js';
 
 class EmployeeService {
     /**
@@ -11,6 +11,7 @@ class EmployeeService {
      */
     async getEmployees(filters = {}) {
         const response = await api.post('/authority/employees', filters);
+        console.log('getEmployees response:', response);
         return response.data || [];
     }
 
@@ -19,6 +20,22 @@ class EmployeeService {
      */
     async createEmployee(data) {
         const response = await api.post('/authority/employees/create', data);
+        return response.data;
+    }
+
+    /**
+     * Update employee
+     */
+    async updateEmployee(data) {
+        const response = await api.post('/authority/employees/update', data);
+        return response.data;
+    }
+
+    /**
+     * Delete employee
+     */
+    async deleteEmployee(employeeId) {
+        const response = await api.post('/authority/employees/delete', { employeeId });
         return response.data;
     }
 

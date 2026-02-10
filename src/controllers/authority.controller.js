@@ -97,6 +97,17 @@ const getIncidentDetails = asyncHandler(async (req, res) => {
         ? await RescueTask.findByTaskId(incident.rescueTaskId)
         : null;
 
+    // Check if incident is resolved/archived to mask nominee details
+    if (['RESOLVED', 'ARCHIVED'].includes(incident.status) && incident.ownerSnapshot) {
+        if (incident.ownerSnapshot.nominees) {
+            incident.ownerSnapshot.nominees = incident.ownerSnapshot.nominees.map(n => ({
+                ...n,
+                phone: '******' + n.phone.slice(-4), // Mask phone
+                address: 'REDACTED', // Mask address
+            }));
+        }
+    }
+
     return sendSuccess(res, {
         ...incident.toObject(),
         vehicle: vehicle ? {
@@ -643,6 +654,74 @@ const createEmployee = asyncHandler(async (req, res) => {
     });
 });
 
+/**
+ * Update employee
+ */
+const updateEmployee = asyncHandler(async (req, res) => {
+    const authorityId = getAuthorityId(req);
+    if (!authorityId) {
+        return sendError(res, 'authorityId is required', 400);
+    }
+    const { employeeId, name, contact, role, shiftStart, shiftEnd, workDays, status } = req.body;
+
+    const employee = await Employee.findOne({ employeeId, authorityId, isDeleted: false });
+    if (!employee) {
+        return sendNotFound(res, 'Employee not found');
+    }
+
+    if (name) employee.name = name;
+    if (contact) employee.contact = contact;
+    if (role) employee.role = role;
+    if (shiftStart) employee.shiftStart = shiftStart;
+    if (shiftEnd) employee.shiftEnd = shiftEnd;
+    if (workDays) employee.workDays = workDays;
+    if (status) employee.status = status;
+
+    await employee.save();
+
+    // Update associated User if name changed
+    if (name) {
+        await User.updateOne({ referenceId: employeeId }, { name });
+    }
+
+    logger.info('Employee updated:', { employeeId, updatedBy: req.user?.userId });
+
+    return sendSuccess(res, employee);
+});
+
+/**
+ * Delete employee
+ */
+const deleteEmployee = asyncHandler(async (req, res) => {
+    const authorityId = getAuthorityId(req);
+    if (!authorityId) {
+        return sendError(res, 'authorityId is required', 400);
+    }
+    const { employeeId } = req.body;
+
+    const employee = await Employee.findOne({ employeeId, authorityId, isDeleted: false });
+    if (!employee) {
+        return sendNotFound(res, 'Employee not found');
+    }
+
+    // Check if employee is busy
+    if (employee.status === 'BUSY_ON_TASK' || employee.currentTaskId) {
+        return sendConflict(res, 'Cannot delete employee who is currently busy on a task');
+    }
+
+    employee.isDeleted = true;
+    employee.deletedAt = new Date();
+    employee.isActive = false; // Deactivate
+    await employee.save();
+
+    // Deactivate associated User
+    await User.updateOne({ referenceId: employeeId }, { isActive: false });
+
+    logger.info('Employee deleted:', { employeeId, deletedBy: req.user?.userId });
+
+    return sendSuccess(res, { message: 'Employee deleted successfully' });
+});
+
 module.exports = {
     setSocketIO,
     getIncidents,
@@ -656,4 +735,6 @@ module.exports = {
     getEmployees,
     createLocalAuthority,
     createEmployee,
+    updateEmployee,
+    deleteEmployee,
 };
