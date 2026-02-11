@@ -14,6 +14,7 @@ router.use(authenticate, requireAdmin);
 router.post('/devices', adminController.createDevice);
 router.get('/devices', adminController.listDevices);
 router.post('/devices/:deviceId/activate', adminController.activateDevice);
+router.post('/devices/:deviceId/api-key', adminController.regenerateApiKey);
 
 // RTOs
 router.post('/rtos', adminController.createRTO);

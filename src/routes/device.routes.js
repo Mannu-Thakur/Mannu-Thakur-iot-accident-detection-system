@@ -41,8 +41,27 @@ router.use('/:deviceId', deviceLimiter);
 // Heartbeat
 router.post('/:deviceId/heartbeat', authenticateDevice, validateBody(heartbeatSchema), deviceController.heartbeat);
 
-// Incident report (multipart with image)
-router.post('/:deviceId/incident', authenticateDevice, requireBoundDevice, upload.single('image'), deviceController.reportIncident);
+// Custom middleware to handle optional image upload or JSON-only
+const handleIncidentUpload = (req, res, next) => {
+    const contentType = req.headers['content-type'];
+    if (contentType && contentType.includes('application/json')) {
+        // If JSON, skip multer
+        return next();
+    }
+    // Else use multer
+    upload.single('image')(req, res, (err) => {
+        if (err) {
+            // If error is "Unexpected field" (maybe no image field?), ignore if we allow data-only
+            // But multer throws "MulterError: Unexpected field" if name doesn't match.
+            // If just missing, it usually passes with req.file = undefined.
+            return next(err);
+        }
+        next();
+    });
+};
+
+// Incident report (multipart with image OR json data)
+router.post('/:deviceId/incident', authenticateDevice, requireBoundDevice, handleIncidentUpload, deviceController.reportIncident);
 
 // Live access control
 router.post('/:deviceId/live-access/cancel', authenticateDevice, validateBody(liveAccessCancelSchema), deviceController.cancelLiveAccess);

@@ -282,10 +282,34 @@ const getAuditLogs = asyncHandler(async (req, res) => {
     return sendPaginated(res, logs, { page: parseInt(page), limit: parseInt(limit), total });
 });
 
+/**
+ * Regenerate Device API Key
+ */
+const regenerateApiKey = asyncHandler(async (req, res) => {
+    const { deviceId } = req.params;
+
+    const device = await Device.findByDeviceId(deviceId);
+    if (!device) return sendNotFound(res, 'Device not found');
+
+    // Generate new key
+    const apiKey = generateApiKey();
+    device.apiKey = apiKey; // Will be hashed by pre-save hook
+    await device.save();
+
+    logger.info('Device API key regenerated:', { deviceId, triggeredBy: req.user?.userId });
+
+    return sendSuccess(res, {
+        deviceId,
+        apiKey, // Return plain key once
+        message: 'API key regenerated successfully. Store this key safely as it will not be shown again.'
+    });
+});
+
 module.exports = {
     createDevice,
     listDevices,
     activateDevice,
+    regenerateApiKey,
     createRTO,
     createStateAuthority,
     listStateAuthorities,
