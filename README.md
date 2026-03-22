@@ -93,6 +93,22 @@ npm test
 
 Detailed API documentation is available in [API_DOCS.md](./API_DOCS.md).
 
+## ScreenShots
+
+![IMG_20260321_131554 jpg](https://github.com/user-attachments/assets/a10a4975-da32-47ad-92ff-3976d722eeef) 
+<img width="1600" height="816" alt="image" src="https://github.com/user-attachments/assets/242c4365-3115-4051-856a-b3f0fe5eedab" />
+<img width="1600" height="823" alt="image" src="https://github.com/user-attachments/assets/f5849d40-0565-4bb2-b7e9-17c5e11f5f90" />
+<img width="1600" height="802" alt="image" src="https://github.com/user-attachments/assets/aaeff49e-c8bd-49fd-a446-99881afefc9b" />
+<img width="1512" height="992" alt="image" src="https://github.com/user-attachments/assets/378226ec-ec91-4a61-b311-cac83bdf2e5c" />
+<img width="1280" height="720" alt="image" src="https://github.com/user-attachments/assets/9c5c5bc6-cd5f-4293-8ba1-669fe957c5ac" />
+<img width="1280" height="720" alt="image" src="https://github.com/user-attachments/assets/11050f1c-4ec8-4df6-9ad0-246e34eb5fc3" />
+<img width="1280" height="720" alt="image" src="https://github.com/user-attachments/assets/ca6aa679-7a06-4696-85e3-f51719283f25" />
+![IMG_20260321_160527 jpg](https://github.com/user-attachments/assets/659f346a-ee44-47d0-adb0-7c68bcc22b21)
+
+
+
+
+
 ## 📄 License
 
 ISC
